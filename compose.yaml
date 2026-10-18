@@ -1502,9 +1502,11 @@ services:
     - --conf
     - spark.driver.bindAddress=0.0.0.0
     - --driver-memory
-    - 768m
+    - 512m
     - --conf
-    - spark.driver.maxResultSize=128m
+    - spark.driver.maxResultSize=64m
+    - --conf
+    - spark.cores.max=1
     - /app/20_build_ebrasil_warehouse.py
     volumes:
     - ./spark/conf/spark-defaults.conf:/opt/spark/conf/spark-defaults.conf:ro
