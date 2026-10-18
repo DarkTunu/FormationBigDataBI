@@ -94,8 +94,10 @@ Les commandes de contrôle doivent retourner le code `0`. Les sections 2 et 5 do
 # Vérifier la configuration résolue
 python checks/run_logged.py --name compose-config -- docker compose --env-file .env --env-file ports.env --profile full --profile checks config --quiet
 
-# Télécharger les images et construire les images locales, outils de test compris
+# Télécharger les images 
 python checks/run_logged.py --name image-pull -- docker compose --env-file .env --env-file ports.env --profile full --profile seed --profile logs --profile checks pull --ignore-buildable
+
+# Construire les images locales, outils de test compris
 python checks/run_logged.py --name image-build -- docker compose --env-file .env --env-file ports.env --profile full --profile seed --profile logs --profile checks build
 
 # Vérifier les ports sur le moteur Docker réel
