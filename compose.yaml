@@ -1465,6 +1465,104 @@ services:
     volumes:
     - .:/project:ro
     - ./reports:/reports
+  ebrasil-silver-init:
+    image: bigdata-training/spark-runtime:local
+    profiles:
+    - analytics
+    - full
+    restart: 'no'
+    user: spark
+    mem_limit: 1536m
+    hostname: ebrasil-silver-init
+    environment:
+      AWS_ACCESS_KEY_ID: ${S3_ACCESS_KEY:-labadmin}
+      AWS_SECRET_ACCESS_KEY: ${S3_SECRET_KEY:-TRAINING_ONLY_S3_PASSWORD}
+      AWS_REGION: ${AWS_REGION:-us-east-1}
+      AWS_DEFAULT_REGION: ${AWS_REGION:-us-east-1}
+      SPARK_NO_DAEMONIZE: 'true'
+      SPARK_LOCAL_IP: ebrasil-silver-init
+      PYSPARK_PYTHON: python3
+      PYSPARK_DRIVER_PYTHON: python3
+    entrypoint:
+    - /opt/spark/bin/spark-submit
+    - --master
+    - spark://spark-master:7077
+    - --conf
+    - spark.driver.host=ebrasil-silver-init
+    - --conf
+    - spark.driver.bindAddress=0.0.0.0
+    - /app/20_build_ebrasil_warehouse.py
+    volumes:
+    - ./spark/conf/spark-defaults.conf:/opt/spark/conf/spark-defaults.conf:ro
+    - ./spark/jobs/20_build_ebrasil_warehouse.py:/app/20_build_ebrasil_warehouse.py:ro
+    depends_on:
+      objectstore-init:
+        condition: service_completed_successfully
+      spark-master:
+        condition: service_healthy
+      spark-worker-1:
+        condition: service_healthy
+      spark-worker-2:
+        condition: service_healthy
+    networks:
+    - training-net
+  ebrasil-druid-init:
+    image: bigdata-training/ebrasil-druid:local
+    build:
+      context: ./docker/ebrasil-druid
+    profiles:
+    - analytics
+    - full
+    restart: 'no'
+    mem_limit: 384m
+    environment:
+      S3_ENDPOINT: http://objectstore:9000
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:-labadmin}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:-TRAINING_ONLY_S3_PASSWORD}
+      AWS_REGION: ${AWS_REGION:-us-east-1}
+      DRUID_URL: http://druid-router:8888
+    depends_on:
+      ebrasil-silver-init:
+        condition: service_completed_successfully
+      druid-router:
+        condition: service_healthy
+    networks:
+    - training-net
+  ebrasil-check:
+    image: bigdata-training/ebrasil-druid:local
+    profiles:
+    - checks
+    restart: 'no'
+    mem_limit: 384m
+    depends_on:
+      reports-init:
+        condition: service_completed_successfully
+      ebrasil-silver-init:
+        condition: service_completed_successfully
+      ebrasil-druid-init:
+        condition: service_completed_successfully
+    environment:
+      S3_ENDPOINT: http://objectstore:9000
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:-labadmin}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:-TRAINING_ONLY_S3_PASSWORD}
+      AWS_REGION: ${AWS_REGION:-us-east-1}
+      DRUID_URL: http://druid-router:8888
+    entrypoint:
+    - python
+    - /checks/run_logged.py
+    - --name
+    - ebrasil-check
+    - --log-dir
+    - /reports
+    - --
+    - python
+    - /app/check.py
+    volumes:
+    - ./checks:/checks:ro
+    - ./reports:/reports
+    networks:
+    - training-net
+
 networks:
   training-net:
     driver: bridge
