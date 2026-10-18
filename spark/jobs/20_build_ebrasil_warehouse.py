@@ -281,7 +281,7 @@ def main():
     logistics = logistics.select("order_id", "customer_id", "customer_zip", "seller_zip",
         "status", key_date(purchase).alias("purchase_date_key"), key_time(purchase).alias("purchase_time_key"),
         haversine.alias("distance_km"),
-        (F.unix_timestamp("delivered_customer")-F.unix_timestamp("purchase_timestamp"))/86400.0
+        ((F.unix_timestamp("delivered_customer")-F.unix_timestamp("purchase_timestamp"))/86400.0)
             .alias("delivery_days"),
         ((F.unix_timestamp("delivered_customer")-F.unix_timestamp("estimated_delivery"))/86400.0)
             .alias("late_days"),
