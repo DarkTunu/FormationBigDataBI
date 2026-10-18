@@ -252,10 +252,18 @@ def main():
     else:
         value_columns = [c for c in payments.columns if c.startswith("value_")]
         if value_columns:
-            pay_detail = reduce(lambda a, b: a.unionByName(b),
-                [payments.select("order_id", F.lit(c[6:]).alias("payment_type"),
-                 F.col(c).cast("double").alias("payment_value"),
-                 F.lit(0).cast("long").alias("installments")) for c in value_columns])
+            payment_rows = []
+            for value_column in value_columns:
+                payment_type = value_column[6:]
+                installment_column = f"int_{payment_type}"
+                installment_value = (F.col(installment_column).cast("long")
+                                     if has(payments, installment_column)
+                                     else F.lit(0).cast("long"))
+                payment_rows.append(payments.select("order_id",
+                    F.lit(payment_type).alias("payment_type"),
+                    F.col(value_column).cast("double").alias("payment_value"),
+                    installment_value.alias("installments")))
+            pay_detail = reduce(lambda a, b: a.unionByName(b), payment_rows)
         else:
             pay_detail = payments.select("order_id", F.lit("aggregated").alias("payment_type"),
                 F.col("value").cast("double").alias("payment_value"),
