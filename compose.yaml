@@ -949,6 +949,8 @@ services:
     volumes:
     - druid-coordinator-var:/opt/druid/var
     depends_on:
+      ebrasil-silver-init:
+        condition: service_completed_successfully
       druid-db:
         condition: service_healthy
       zookeeper:
@@ -1008,6 +1010,8 @@ services:
     volumes:
     - druid-broker-var:/opt/druid/var
     depends_on:
+      ebrasil-silver-init:
+        condition: service_completed_successfully
       druid-db:
         condition: service_healthy
       zookeeper:
@@ -1067,6 +1071,8 @@ services:
     volumes:
     - druid-historical-var:/opt/druid/var
     depends_on:
+      ebrasil-silver-init:
+        condition: service_completed_successfully
       druid-db:
         condition: service_healthy
       zookeeper:
@@ -1127,6 +1133,8 @@ services:
     - druid-middlemanager-var:/opt/druid/var
     - ./donnees:/opt/training/data:ro
     depends_on:
+      ebrasil-silver-init:
+        condition: service_completed_successfully
       druid-db:
         condition: service_healthy
       zookeeper:
@@ -1186,6 +1194,8 @@ services:
     volumes:
     - druid-router-var:/opt/druid/var
     depends_on:
+      ebrasil-silver-init:
+        condition: service_completed_successfully
       ports-check:
         condition: service_completed_successfully
       druid-db:
