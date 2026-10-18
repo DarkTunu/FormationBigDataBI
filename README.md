@@ -148,7 +148,7 @@ Une sortie `0` signifie que la tâche a réussi. Ne pas ajouter `--profile seed`
 
 Au démarrage du profil `full` (ou `analytics`), trois étapes s’exécutent dans l’ordre :
 
-1. `objectstore-init` copie les neuf fichiers Parquet de `donnees/db_ebrasil/` vers `s3://lakehouse/bronze/ebrasil/`. Les octets et les empreintes SHA-256 sont contrôlés ; le manifeste source est enregistré dans le préfixe.
+1. `objectstore-init` copie les huit fichiers Parquet de `donnees/db_ebrasil/` vers `s3://lakehouse/bronze/ebrasil/`. Les octets et les empreintes SHA-256 sont contrôlés ; le manifeste source est enregistré dans le préfixe.
 2. `ebrasil-silver-init` lance Spark et construit les dimensions conformes et les tables de faits Parquet dans `s3://lakehouse/silver/ebrasil/`. Chaque table dispose aussi d’une sortie JSON dédiée à l’ingestion Druid.
 3. `ebrasil-druid-init` ingère les dimensions et les faits en datasources Druid. Les tâches sont séquentielles et l’initialisation attend leur succès.
 
@@ -162,7 +162,7 @@ Les sorties de vérification sont consultables dans `reports/`. Pour relancer le
 docker compose --env-file .env --env-file ports.env --profile full --profile checks run --rm ebrasil-check
 ```
 
-Ce contrôle compare les fichiers bronze aux empreintes source, vérifie la présence des tables Parquet silver, puis compare le nombre de lignes de chaque table aux datasources Druid correspondantes. Le rapport horodaté est écrit dans `reports/`.
+Ce contrôle compare les huit fichiers bronze aux empreintes source, vérifie la présence des tables Parquet silver, puis compare le nombre de lignes de chaque table aux datasources Druid correspondantes. Le rapport horodaté est écrit dans `reports/`.
 
 ## 6. Arrêter, redémarrer, reconstruire
 
