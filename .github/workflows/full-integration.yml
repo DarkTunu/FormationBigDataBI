@@ -30,6 +30,9 @@ jobs:
         run: python checks/run_logged.py --name static-check -- docker compose --env-file .env --env-file ports.env --profile checks run --rm static-check
       - name: Run full integration checks
         run: python checks/run_logged.py --name integration-check -- docker compose --env-file .env --env-file ports.env --profile checks run --rm integration-check --full
+      - name: Verify eBrasil bronze silver and Druid model
+        if: ${{ !cancelled() }}
+        run: python checks/run_logged.py --name ebrasil-check -- docker compose --env-file .env --env-file ports.env --profile full --profile checks run --rm ebrasil-check
       - name: Run Airflow to Spark check
         if: ${{ !cancelled() }}
         run: python checks/run_logged.py --name airflow-check -- docker compose --env-file .env --env-file ports.env --profile checks run --rm airflow-check
