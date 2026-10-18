@@ -18,6 +18,8 @@ def test_ebrasil_files_and_startup_order():
     assert druid["depends_on"]["ebrasil-silver-init"]["condition"] == "service_completed_successfully"
     assert druid["depends_on"]["druid-router"]["condition"] == "service_healthy"
     assert check["depends_on"]["ebrasil-druid-init"]["condition"] == "service_completed_successfully"
+    assert check["profiles"] == ["checks"]
+    assert "checks" in silver["profiles"] and "checks" in druid["profiles"]
     assert "full" in silver["profiles"] and "full" in druid["profiles"]
 
 def test_ebrasil_processing_and_control_scripts_parse():
@@ -38,5 +40,7 @@ def test_ebrasil_processing_and_control_scripts_parse():
     ):
         assert f'"{table}"' in model
     assert "bronze/ebrasil" in model and "silver/ebrasil" in model
+    assert "getFileSystem(hadoop_conf)" in model
+    assert "FileSystem.get(" not in model
     checker = scripts[3].read_text(encoding="utf-8")
     assert "EBRASIL_ALL_CHECKS_OK" in checker

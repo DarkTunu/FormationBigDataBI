@@ -84,10 +84,14 @@ def main():
     global spark
     spark = (SparkSession.builder.appName("ebrasil-star-schema")
              .config("spark.sql.session.timeZone", "UTC").getOrCreate())
-    missing = [name for name in INPUTS
-               if not spark._jvm.org.apache.hadoop.fs.FileSystem.get(
-                   spark._jsc.hadoopConfiguration()
-               ).exists(spark._jvm.org.apache.hadoop.fs.Path(f"{BRONZE}/{name}.parquet"))]
+    hadoop_conf = spark._jsc.hadoopConfiguration()
+    missing = []
+    for name in INPUTS:
+        path = spark._jvm.org.apache.hadoop.fs.Path(f"{BRONZE}/{name}.parquet")
+        # Resolve the filesystem from the s3a:// URI instead of Hadoop's default
+        # otherwise Hadoop may select the local filesystem and reject S3A paths.
+        if not path.getFileSystem(hadoop_conf).exists(path):
+            missing.append(name)
     if missing:
         raise RuntimeError(f"Missing bronze parquet inputs: {missing}")
 
