@@ -59,6 +59,35 @@ Le dépôt contient déjà `.env`, `ports.env` et les huit fichiers Parquet de `
 
 Toutes les commandes suivantes s'exécutent à la racine du dépôt. **Toujours charger `.env`, puis `ports.env` dans cet ordre** : `.env` contient les paramètres et comptes ; `ports.env` impose les ports hôte cohérents du portail. Modifier un mot de passe dans `.env` ne modifie pas un compte déjà créé dans un volume existant.
 
+### Raccourci : démarrage et contrôles complets
+
+Pour lancer l’installation complète puis vérifier les services et les intégrations :
+
+```bash
+# Vérifier la configuration Compose
+docker compose --env-file .env --env-file ports.env --profile full --profile checks config --quiet
+
+# Télécharger et construire les images
+docker compose --env-file .env --env-file ports.env --profile full --profile seed --profile logs --profile checks pull --ignore-buildable
+docker compose --env-file .env --env-file ports.env --profile full --profile seed --profile logs --profile checks build
+
+# Vérifier les ports, démarrer la plateforme et contrôler son état
+docker compose --env-file .env --env-file ports.env run --rm ports-check
+docker compose --env-file .env --env-file ports.env --profile full up -d --remove-orphans --wait --wait-timeout 900
+docker compose --env-file .env --env-file ports.env --profile full ps -a
+
+# Vérifier eBrasil, les contrats statiques, les intégrations et Airflow
+docker compose --env-file .env --env-file ports.env --profile full --profile checks run --rm ebrasil-check
+docker compose --env-file .env --env-file ports.env --profile checks run --rm static-check
+docker compose --env-file .env --env-file ports.env --profile checks run --rm integration-check --full
+docker compose --env-file .env --env-file ports.env --profile checks run --rm airflow-check
+
+# Lancer aussi les tests unitaires Python (facultatif)
+python -m pytest -q tests
+```
+
+Les commandes de contrôle doivent retourner le code `0`. Les sections 2 et 5 donnent les détails et les rapports produits.
+
 ## 2. Construction complète et démarrage
 
 ```bash
@@ -105,7 +134,7 @@ Airflow orchestre les jobs Spark. Druid ingère les ventes depuis Kafka et S3 ; 
 | Orchestration | `airflow-db`, `airflow` | Métadonnées et orchestration Spark |
 | Druid | `druid-db`, `zookeeper`, `druid-coordinator`, `druid-broker`, `druid-historical`, `druid-middlemanager`, `druid-router`, `ebrasil-druid-init` | Ingestion batch/streaming, modèle eBrasil et analyse OLAP |
 | Superset | `superset-db`, `superset-init`, `superset` | Métadonnées, connexions SQL et BI |
-| Contrôles | `static-check`, `integration-check`, `airflow-check` | Configuration et intégrations réelles |
+| Contrôles | `ebrasil-check`, `static-check`, `integration-check`, `airflow-check` | Modèle eBrasil, configuration et intégrations réelles |
 
 Les profils spécialisés restent disponibles : `orchestration` (Airflow), `analytics` (Druid/Superset), `demo` (API locale), `seed` (producteurs fichiers/SQL), `logs` (producteur logs). Les services sans profil constituent le cœur.
 
@@ -192,7 +221,7 @@ Au démarrage du profil `full` (ou `analytics`), trois étapes s’exécutent da
 
 1. `objectstore-init` copie les huit fichiers Parquet de `donnees/db_ebrasil/` vers `s3://lakehouse/bronze/ebrasil/`. Les octets et les empreintes SHA-256 sont contrôlés ; le manifeste source est enregistré dans le préfixe.
 2. `ebrasil-silver-init` lance Spark et construit les dimensions conformes et les tables de faits Parquet dans `s3://lakehouse/silver/ebrasil/`. Chaque table dispose aussi d’une sortie JSON dédiée à l’ingestion Druid.
-3. `ebrasil-druid-init` ingère les dimensions et les faits en datasources Druid. Les tâches sont séquentielles et l’initialisation attend leur succès.
+3. `ebrasil-druid-init` ingère les dimensions et les faits en datasources Druid. Les tâches sont séquentielles ; après chaque ingestion, le service attend que le Broker retourne le nombre de lignes attendu avant de déclarer l’initialisation terminée. Cela laisse aux segments le temps de devenir interrogeables et évite une course avec `ebrasil-check`.
 
 Le modèle suit les six étoiles du document de modélisation : ventes (`fact_order_item`), commandes (`fact_order`), finance (`fact_payment`), logistique (`fact_logistics`), satisfaction (`fact_review`) et CRM/RFM (`mart_customer_rfm`). Les dimensions conformes comprennent date, heure, client, produit, vendeur, géographie, statut de commande et type de paiement. La dimension Date expose année, semestre, trimestre, mois, semaine ISO et jour ; la dimension Temps expose partie du jour, heure, minute et seconde. `order_id` reste présent dans les faits pour le drill-through.
 
