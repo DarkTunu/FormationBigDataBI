@@ -1486,6 +1486,9 @@ services:
     - ./reports:/reports
   ebrasil-silver-init:
     image: bigdata-training/spark-runtime:local
+    build:
+      context: .
+      dockerfile: spark/runtime/Dockerfile
     profiles:
     - analytics
     - full
