@@ -76,3 +76,14 @@ def test_full_wait_has_no_unconsumed_one_shot_producers():
         assert 'full' not in services[name]['profiles']
     source=(ROOT/'checks/integration.py').read_text()
     assert "['file-producer','postgres-producer','web-log-producer']" in source
+
+
+def test_fresh_machine_setup_is_documented():
+    requirements = (ROOT/'requirements-checks.txt').read_text().splitlines()
+    assert requirements == ['pytest==9.1.1', 'PyYAML==6.0.3', 'boto3==1.43.114']
+    readme = (ROOT/'README.md').read_text()
+    assert 'git clone https://github.com/rbizoi/FormationBigDataBI.git' in readme
+    assert 'docker context show' in readme and 'docker compose version' in readme
+    assert 'profile full --profile checks run --rm ebrasil-check' in readme
+    workflow = (ROOT/'.github/workflows/contracts.yml').read_text()
+    assert 'pip install -r requirements-checks.txt' in workflow
