@@ -75,6 +75,33 @@ def task_spec(table, definition):
         },
     }
 
+def wait_until_queryable(table, expected_rows, timeout_seconds=180):
+    """Wait until the Broker can query all rows published by the indexing task."""
+    deadline = time.monotonic() + timeout_seconds
+    last_error = "No result returned"
+    sql = f'SELECT COUNT(*) AS n FROM "{table}"'
+    while True:
+        try:
+            result = request("POST", "/druid/v2/sql", json={"query": sql}).json()
+            if result and int(result[0].get("n", -1)) == int(expected_rows):
+                return
+            actual = result[0].get("n") if result else "no rows"
+            last_error = f"query returned {actual} rows; expected {expected_rows}"
+        except requests.HTTPError as exc:
+            response = exc.response
+            if response is None or response.status_code not in (400, 503):
+                raise
+            last_error = f"HTTP {response.status_code}: {response.text[:1000]}"
+        except requests.RequestException as exc:
+            last_error = str(exc)
+        if time.monotonic() >= deadline:
+            raise TimeoutError(
+                f"Druid datasource {table} was not queryable within "
+                f"{timeout_seconds}s: {last_error}"
+            )
+        time.sleep(5)
+
+
 def ingest_table(table, definition):
     body = task_spec(table, definition)
     task_id = request("POST", "/druid/indexer/v1/task", json=body).json()["task"]
@@ -83,6 +110,7 @@ def ingest_table(table, definition):
         status = request("GET", f"/druid/indexer/v1/task/{task_id}/status").json()
         state = status.get("status", {}).get("status")
         if state == "SUCCESS":
+            wait_until_queryable(table, definition["rows"])
             print(f"DRUID_EBRASIL_TABLE_OK datasource={table} rows={definition['rows']}", flush=True)
             return
         if state == "FAILED":
