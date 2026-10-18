@@ -16,13 +16,23 @@ Pour les commandes de journalisation et les tests locaux, installer Python 3.12 
 git clone https://github.com/rbizoi/FormationBigDataBI.git
 cd FormationBigDataBI
 
-# Vérifier que le client Docker pointe vers le moteur qui hébergera la formation.
+# Choisir le moteur qui hébergera la formation.
+docker context ls
 docker context show
+
+# Exécuter UNE seule commande selon le moteur choisi :
+# Docker Desktop sous Linux :
+docker context use desktop-linux
+# Docker Engine Linux (si c'est bien ce moteur que vous utiliserez) :
+# docker context use default
+
+# Vérifier le client ET le serveur du même moteur.
 docker version
 docker compose version
 docker info --format '{{.OSType}}'
 
-# Dépendances des contrôles exécutés depuis l'hôte.
+# Dépendances facultatives pour enregistrer aussi les sorties de commandes
+# hôte dans reports/ et lancer les tests unitaires locaux.
 python --version
 python -m pip install -r requirements-checks.txt
 ```
@@ -35,7 +45,15 @@ source .venv/bin/activate
 python -m pip install -r requirements-checks.txt
 ```
 
-Sous Windows, utiliser `py -3.12` à la place de `python` si nécessaire.
+Sous Windows, utiliser `py -3.12` à la place de `python` si nécessaire. Pour créer l'environnement virtuel sous Windows :
+
+```powershell
+py -3.12 -m venv .venv
+.venv\\Scripts\\Activate.ps1
+py -m pip install -r requirements-checks.txt
+```
+
+Python n'est pas requis pour la construction et le démarrage Docker. Les commandes Compose peuvent être lancées directement ; les contrôles de la section 5 écrivent leurs rapports dans `reports/` depuis leurs conteneurs. L'environnement Python hôte ajoute un journal horodaté autour des commandes et permet les tests unitaires locaux.
 
 Le dépôt contient déjà `.env`, `ports.env` et les huit fichiers Parquet de `donnees/db_ebrasil/` : aucune copie manuelle ni création préalable de volume n'est requise. Les valeurs de `.env` sont des comptes de formation ; le Compose publie les interfaces sur `127.0.0.1`. Pour un serveur partagé, changer les identifiants avant le démarrage et ne pas exposer directement ces ports à Internet.
 
@@ -257,5 +275,24 @@ docker compose --env-file .env --env-file ports.env --profile full run --rm kafk
 ```
 
 Un leader Kafka `-1` ou un timeout de livraison impose d'examiner les logs, la mémoire et l'espace disque du broker. Un refus de connexion vers `trino:8080` concerne le serveur interne, pas son port hôte. Aucun contrôle ne supprime automatiquement les données pour tenter de réparer un serveur.
+
+### Docker Desktop renvoie une erreur API 500
+
+Vérifier d'abord le contexte et les versions du client et du serveur :
+
+```bash
+docker context show
+docker version
+docker compose version
+docker --context desktop-linux ps -a
+```
+
+Sur Linux avec Docker Desktop, le contexte normalement utilisé est `desktop-linux`. N'alterner pas de contexte pendant une installation : chaque moteur possède ses propres conteneurs, images et volumes. Une erreur 500 sur `/v1.xx/containers/.../json` signifie que le serveur Docker n'a pas répondu correctement à l'inspection ; le suffixe `/json` fait partie de l'API HTTP. Avec la commande Docker, inspecter uniquement le nom ou l'identifiant :
+
+```bash
+docker --context desktop-linux inspect NOM_OU_ID_DU_CONTENEUR
+```
+
+Si Docker Desktop renvoie encore 500, le redémarrer depuis **Troubleshoot → Restart**, puis vérifier de nouveau `docker version` et `docker context show`. Un message `no such object` signifie que le conteneur n'existe plus dans ce moteur ; les conteneurs lancés avec `--rm` sont supprimés après leur exécution. Cette erreur API ne permet pas à elle seule de conclure à un échec Spark ou à un manque de mémoire.
 
 Les contrôles statiques/unitaires et les workflows Docker du dépôt fournissent des validations distinctes. Le workflow manuel **Full integration** exécute la plateforme et les deux suites fonctionnelles sur un runner Docker suffisamment dimensionné ; un succès statique seul ne certifie pas une installation étudiante.
