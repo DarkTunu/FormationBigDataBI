@@ -1473,7 +1473,6 @@ services:
     - analytics
     - full
     - checks
-    - checks
     restart: 'no'
     user: spark
     mem_limit: 1536m
@@ -1517,6 +1516,7 @@ services:
     profiles:
     - analytics
     - full
+    - checks
     restart: 'no'
     mem_limit: 384m
     environment:
