@@ -49,7 +49,7 @@ Sous Windows, utiliser `py -3.12` à la place de `python` si nécessaire. Pour c
 
 ```powershell
 py -3.12 -m venv .venv
-.venv\\Scripts\\Activate.ps1
+.venv\Scripts\Activate.ps1
 py -m pip install -r requirements-checks.txt
 ```
 
