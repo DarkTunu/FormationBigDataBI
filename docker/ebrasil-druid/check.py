@@ -36,7 +36,10 @@ def check_bronze():
 def query(sql):
     response = HTTP.post(DRUID + "/druid/v2/sql",
                          json={"query": sql}, timeout=120)
-    response.raise_for_status()
+    if not response.ok:
+        raise RuntimeError(
+            f"Druid SQL HTTP {response.status_code}: {response.text[:2000]}"
+        )
     return response.json()
 
 def check_silver_and_druid():
