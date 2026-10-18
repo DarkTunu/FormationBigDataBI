@@ -1472,6 +1472,8 @@ services:
     profiles:
     - analytics
     - full
+    - checks
+    - checks
     restart: 'no'
     user: spark
     mem_limit: 1536m
@@ -1533,7 +1535,7 @@ services:
   ebrasil-check:
     image: bigdata-training/ebrasil-druid:local
     profiles:
-    - full
+    - checks
     restart: 'no'
     mem_limit: 384m
     depends_on:
