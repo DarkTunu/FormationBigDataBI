@@ -41,6 +41,8 @@ def test_ebrasil_processing_and_control_scripts_parse():
         assert f'"{table}"' in model
     assert "bronze/ebrasil" in model and "silver/ebrasil" in model
     assert "getFileSystem(hadoop_conf)" in model
+    assert '"spark.sql.legacy.parquet.nanosAsLong", "true"' in model
+    assert "timestamp_micros" in model and "DIV 1000" in model
     assert "FileSystem.get(" not in model
     checker = scripts[3].read_text(encoding="utf-8")
     assert "EBRASIL_ALL_CHECKS_OK" in checker

@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 from functools import reduce
 
 from pyspark.sql import SparkSession, functions as F
+from pyspark.sql.types import LongType
 
 
 ROOT = "s3a://lakehouse"
@@ -52,7 +53,13 @@ def col_or_null(df, name, alias=None, dtype="string"):
     return value.alias(alias or name)
 
 def timestamp(df, name):
-    return F.to_timestamp(F.col(name)) if has(df, name) else F.lit(None).cast("timestamp")
+    if not has(df, name):
+        return F.lit(None).cast("timestamp")
+    if isinstance(df.schema[name].dataType, LongType):
+        # Spark's compatibility mode exposes Parquet nanoseconds as epoch-ns longs.
+        # Convert to epoch microseconds before building a Spark timestamp.
+        return F.timestamp_micros(F.expr(f"`{name}` DIV 1000"))
+    return F.to_timestamp(F.col(name))
 
 def key_date(ts):
     return F.date_format(ts, "yyyyMMdd").cast("int")
@@ -83,7 +90,8 @@ def persist(name, df, manifest):
 def main():
     global spark
     spark = (SparkSession.builder.appName("ebrasil-star-schema")
-             .config("spark.sql.session.timeZone", "UTC").getOrCreate())
+             .config("spark.sql.session.timeZone", "UTC")
+             .config("spark.sql.legacy.parquet.nanosAsLong", "true").getOrCreate())
     hadoop_conf = spark._jsc.hadoopConfiguration()
     missing = []
     for name in INPUTS:
@@ -147,9 +155,15 @@ def main():
     order_columns = ["order_id", "customer_id", "status", "purchase_timestamp",
                      "approved_at", "delivered_carrier", "delivered_customer",
                      "estimated_delivery"]
-    o = orders.select(*[col_or_null(orders, n, dtype="timestamp" if n.endswith(
-        ("timestamp", "_at", "carrier", "customer", "delivery")) else "string")
-        for n in order_columns])
+    order_timestamp_columns = {
+        "purchase_timestamp", "approved_at", "delivered_carrier",
+        "delivered_customer", "estimated_delivery",
+    }
+    o = orders.select(*[
+        timestamp(orders, n).alias(n) if n in order_timestamp_columns
+        else col_or_null(orders, n)
+        for n in order_columns
+    ])
     purchase = timestamp(o, "purchase_timestamp")
     date_frames = [o.select(timestamp(o, n).alias("d")) for n in
                    ("purchase_timestamp", "approved_at", "delivered_carrier",
