@@ -53,7 +53,7 @@ py -3.12 -m venv .venv
 py -m pip install -r requirements-checks.txt
 ```
 
-Python n'est pas requis pour la construction et le démarrage Docker. Les commandes Compose peuvent être lancées directement ; les contrôles de la section 5 écrivent leurs rapports dans `reports/` depuis leurs conteneurs. L'environnement Python hôte ajoute un journal horodaté autour des commandes et permet les tests unitaires locaux.
+Python n'est pas requis pour construire et démarrer la plateforme. Dans la section 2, pour lancer une commande Docker sans Python, retirez simplement le préfixe `python checks/run_logged.py --name NOM_DU_LOG --` et gardez la commande `docker compose` qui suit. Les contrôles de la section 5 écrivent leurs rapports dans `reports/` depuis leurs conteneurs ; le préfixe Python ajoute en plus un journal horodaté de la commande sur l'hôte. Les tests unitaires locaux nécessitent Python.
 
 Le dépôt contient déjà `.env`, `ports.env` et les huit fichiers Parquet de `donnees/db_ebrasil/` : aucune copie manuelle ni création préalable de volume n'est requise. Les valeurs de `.env` sont des comptes de formation ; le Compose publie les interfaces sur `127.0.0.1`. Pour un serveur partagé, changer les identifiants avant le démarrage et ne pas exposer directement ces ports à Internet.
 
@@ -287,7 +287,7 @@ docker compose version
 docker --context desktop-linux ps -a
 ```
 
-Sur Linux avec Docker Desktop, le contexte normalement utilisé est `desktop-linux`. N'alterner pas de contexte pendant une installation : chaque moteur possède ses propres conteneurs, images et volumes. Une erreur 500 sur `/v1.xx/containers/.../json` signifie que le serveur Docker n'a pas répondu correctement à l'inspection ; le suffixe `/json` fait partie de l'API HTTP. Avec la commande Docker, inspecter uniquement le nom ou l'identifiant :
+Sur Linux avec Docker Desktop, le contexte normalement utilisé est `desktop-linux`. N'alternez pas de contexte pendant une installation : chaque moteur possède ses propres conteneurs, images et volumes. Une erreur 500 sur `/v1.xx/containers/.../json` signifie que le serveur Docker n'a pas répondu correctement à l'inspection ; le suffixe `/json` fait partie de l'API HTTP. Avec la commande Docker, inspecter uniquement le nom ou l'identifiant :
 
 ```bash
 docker --context desktop-linux inspect NOM_OU_ID_DU_CONTENEUR
