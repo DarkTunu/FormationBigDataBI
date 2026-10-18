@@ -1279,6 +1279,8 @@ services:
         condition: service_completed_successfully
       superset-init:
         condition: service_completed_successfully
+      ebrasil-druid-init:
+        condition: service_completed_successfully
     healthcheck:
       test:
       - CMD
