@@ -88,7 +88,7 @@ def main():
     missing = []
     for name in INPUTS:
         path = spark._jvm.org.apache.hadoop.fs.Path(f"{BRONZE}/{name}.parquet")
-        # Resolve the filesystem from the s3a:// URI; FileSystem.get(conf) alone
+        # Resolve the filesystem from the s3a:// URI instead of Hadoop's default
         # otherwise Hadoop may select the local filesystem and reject S3A paths.
         if not path.getFileSystem(hadoop_conf).exists(path):
             missing.append(name)
