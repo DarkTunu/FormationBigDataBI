@@ -152,8 +152,8 @@ def sync_ebrasil_bronze(client, source: Path, verify_only: bool = False) -> dict
     if not ebrasil.is_dir():
         raise FileNotFoundError(f"Missing eBrasil source directory: {ebrasil}")
     files = sorted(path for path in ebrasil.iterdir() if path.is_file() and path.suffix.lower() == ".parquet")
-    if len(files) != 9:
-        raise ValueError(f"Expected 9 eBrasil Parquet files in {ebrasil}, found {len(files)}")
+    if len(files) != 8:
+        raise ValueError(f"Expected 8 eBrasil Parquet files in {ebrasil}, found {len(files)}")
     manifest = {}
     for path in files:
         key = "bronze/ebrasil/" + path.name
