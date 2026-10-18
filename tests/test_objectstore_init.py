@@ -82,7 +82,7 @@ def test_sync_nested_data_idempotent_and_detects_corruption(tmp_path):
         module.sync_data(client, tmp_path, verify_only=True)
 
 
-def test_sync_ebrasil_bronze_copies_and_verifies_nine_parquet_files(tmp_path):
+def test_sync_ebrasil_bronze_copies_and_verifies_eight_parquet_files(tmp_path):
     import io
     import pytest
 
@@ -96,13 +96,13 @@ def test_sync_ebrasil_bronze_copies_and_verifies_nine_parquet_files(tmp_path):
     source = tmp_path / "donnees"
     ebrasil = source / "db_ebrasil"
     ebrasil.mkdir(parents=True)
-    for index in range(9):
+    for index in range(8):
         (ebrasil / f"table_{index}.parquet").write_bytes(f"parquet-{index}".encode())
     client = BronzeS3()
     client.create_bucket(Bucket="lakehouse")
 
     manifest = module.sync_ebrasil_bronze(client, source)
-    assert len(manifest) == 9
+    assert len(manifest) == 8
     assert all(key.startswith("bronze/ebrasil/") for key in client.buckets["lakehouse"])
     assert module.sync_ebrasil_bronze(client, source, verify_only=True) == manifest
     client.buckets["lakehouse"]["bronze/ebrasil/table_0.parquet"] = b"corrupt"
