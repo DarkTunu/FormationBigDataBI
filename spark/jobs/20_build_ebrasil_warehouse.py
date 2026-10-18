@@ -29,7 +29,10 @@ DRUID_METRICS = {
                        "late_days": "doubleSum", "delivered_on_time": "longSum",
                        "orders_count": "longSum"},
     "fact_review": {"review_count": "longSum", "score_sum": "longSum",
-                    "text_review_count": "longSum", "answer_hours_sum": "doubleSum"},
+                    "score_1": "longSum", "score_2": "longSum", "score_3": "longSum",
+                    "score_4": "longSum", "score_5": "longSum",
+                    "text_review_groups": "longSum", "answer_hours_sum": "doubleSum",
+                    "creation_hours_sum": "doubleSum"},
     "mart_customer_rfm": {"frequency": "longSum", "monetary": "doubleSum",
                           "recency_days": "longSum", "average_order_value": "doubleSum"},
 }
@@ -226,7 +229,15 @@ def main():
         .withColumn("payment_amount", F.coalesce("payment_amount", F.lit(0.0)))
         .withColumn("payment_gap", F.col("payment_amount")-F.col("product_amount")-F.col("freight_amount"))
         .select("order_id", "customer_unique_id", "status",
-                key_date(purchase).alias("purchase_date_key"), key_time(purchase).alias("purchase_time_key"),
+                key_date(purchase).alias("purchase_date_key"),
+                key_date(F.col("approved_at")).alias("approved_date_key"),
+                key_date(F.col("delivered_carrier")).alias("shipped_date_key"),
+                key_date(F.col("delivered_customer")).alias("delivered_date_key"),
+                key_date(F.col("estimated_delivery")).alias("estimated_delivery_date_key"),
+                key_time(purchase).alias("purchase_time_key"),
+                key_time(F.col("approved_at")).alias("approved_time_key"),
+                key_time(F.col("delivered_carrier")).alias("shipped_time_key"),
+                key_time(F.col("delivered_customer")).alias("delivered_time_key"),
                 "item_count", "product_count", "seller_count", "product_amount", "freight_amount",
                 "payment_amount", "payment_gap",
                 F.concat(F.date_format(purchase, "yyyy-MM-dd'T'HH:mm:ss"), F.lit("Z")).alias("event_ts")))
@@ -279,7 +290,13 @@ def main():
         F.cos(F.col("clat")*radians)*F.cos(F.col("slat")*radians)*
         F.pow(F.sin((F.col("slng")-F.col("clng"))*radians/2),2)))
     logistics = logistics.select("order_id", "customer_id", "customer_zip", "seller_zip",
-        "status", key_date(purchase).alias("purchase_date_key"), key_time(purchase).alias("purchase_time_key"),
+        "status", key_date(purchase).alias("purchase_date_key"),
+        key_date(F.col("approved_at")).alias("approved_date_key"),
+        key_date(F.col("delivered_carrier")).alias("shipped_date_key"),
+        key_date(F.col("delivered_customer")).alias("delivered_date_key"),
+        key_date(F.col("estimated_delivery")).alias("estimated_delivery_date_key"),
+        key_time(purchase).alias("purchase_time_key"),
+        key_time(F.col("delivered_customer")).alias("delivered_time_key"),
         haversine.alias("distance_km"),
         ((F.unix_timestamp("delivered_customer")-F.unix_timestamp("purchase_timestamp"))/86400.0)
             .alias("delivery_days"),
@@ -294,28 +311,47 @@ def main():
 
     # Reviews are order-level in the prepared Parquet. Preserve score counts
     # and compute an average only from the observed distribution.
-    score_columns = [c for c in reviews.columns if c.startswith("review_id_")]
+    score_columns = [f"score_{n}" for n in range(1, 6) if f"score_{n}" in reviews.columns]
     if score_columns:
-        review_counts = [F.coalesce(F.col(c).cast("long"), F.lit(0)) for c in score_columns]
-        review_count = reduce(lambda a, b: a+b, review_counts)
+        score_counts = {n: F.coalesce(F.col(f"score_{n}").cast("long"), F.lit(0))
+                        for n in range(1, 6) if f"score_{n}" in reviews.columns}
+        review_count = reduce(lambda a, b: a+b, list(score_counts.values()))
         score_sum = reduce(lambda a, b: a+b, [
-            F.coalesce(F.col(c).cast("long"), F.lit(0))*F.lit(int(c.rsplit("_",1)[-1]))
-            for c in score_columns])
+            score_counts[n] * F.lit(n) for n in score_counts])
+        comment_columns = [f"comment_{n}" for n in range(1, 6)
+                           if f"comment_{n}" in reviews.columns]
+        answer_columns = [f"answer_{n}" for n in range(1, 6)
+                          if f"answer_{n}" in reviews.columns]
+        creation_columns = [f"creation_{n}" for n in range(1, 6)
+                            if f"creation_{n}" in reviews.columns]
+        text_groups = reduce(lambda a, b: a+b, [
+            F.when(F.coalesce(F.col(name).cast("double"), F.lit(0.0)) > 0, 1)
+             .otherwise(0).cast("long") for name in comment_columns
+        ]) if comment_columns else F.lit(0).cast("long")
+        answer_sum = reduce(lambda a, b: a+b, [
+            F.coalesce(F.col(name).cast("double"), F.lit(0.0)) for name in answer_columns
+        ]) if answer_columns else F.lit(0.0)
+        creation_sum = reduce(lambda a, b: a+b, [
+            F.coalesce(F.col(name).cast("double"), F.lit(0.0)) for name in creation_columns
+        ]) if creation_columns else F.lit(0.0)
         review_fact = reviews.select("order_id", review_count.alias("review_count"),
-            score_sum.alias("score_sum"), F.lit(0).cast("long").alias("text_review_count"),
-            F.lit(0.0).alias("answer_hours_sum"))
+            score_sum.alias("score_sum"), text_groups.alias("text_review_groups"),
+            answer_sum.alias("answer_hours_sum"), creation_sum.alias("creation_hours_sum"),
+            *[score_counts[n].alias(f"score_{n}") for n in score_counts])
     elif has(reviews, "score"):
         review_fact = reviews.select("order_id", F.lit(1).cast("long").alias("review_count"),
             F.col("score").cast("long").alias("score_sum"),
             F.when((F.col("comment").isNotNull()) & (F.col("comment") > 0), 1).otherwise(0)
-                .cast("long").alias("text_review_count"),
-            (F.col("answer").cast("double")).alias("answer_hours_sum"))
+                .cast("long").alias("text_review_groups"),
+            F.col("answer").cast("double").alias("answer_hours_sum"),
+            F.col("creation").cast("double").alias("creation_hours_sum"))
     else:
         raise RuntimeError(f"Unsupported reviews.parquet schema: {reviews.columns}")
     review_fact = (review_fact.join(o, "order_id", "left").join(cust, "customer_id", "left")
         .select("order_id", "customer_unique_id", "status", "review_count", "score_sum",
             F.when(F.col("review_count")>0, F.col("score_sum")/F.col("review_count"))
-             .alias("average_score"), "text_review_count", "answer_hours_sum",
+             .alias("average_score"), "text_review_groups", "answer_hours_sum", "creation_hours_sum",
+            *[F.col(f"score_{n}") for n in range(1, 6) if f"score_{n}" in review_fact.columns],
             key_date(purchase).alias("purchase_date_key"), key_time(purchase).alias("purchase_time_key"),
             F.concat(F.date_format(purchase, "yyyy-MM-dd'T'HH:mm:ss"), F.lit("Z")).alias("event_ts")))
     persist("fact_review", review_fact, manifest)
