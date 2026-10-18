@@ -76,7 +76,9 @@ def persist(name, df, manifest):
     df.write.mode("overwrite").parquet(f"{SILVER}/{name}")
     count = df.count()
     druid_path = f"{SILVER}/druid/{name}"
-    df.coalesce(1).write.mode("overwrite").json(druid_path)
+    # Druid's S3 input enumerates every JSON object under this table prefix.
+    # Keep Spark's partitions so large facts do not concentrate in one task.
+    df.write.mode("overwrite").json(druid_path)
     metrics = metric_fields(name)
     manifest[name] = {
         "rows": count,
