@@ -1501,6 +1501,10 @@ services:
     - spark.driver.host=ebrasil-silver-init
     - --conf
     - spark.driver.bindAddress=0.0.0.0
+    - --driver-memory
+    - 768m
+    - --conf
+    - spark.driver.maxResultSize=128m
     - /app/20_build_ebrasil_warehouse.py
     volumes:
     - ./spark/conf/spark-defaults.conf:/opt/spark/conf/spark-defaults.conf:ro
