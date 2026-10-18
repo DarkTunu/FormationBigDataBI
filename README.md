@@ -4,7 +4,7 @@
 
 Plateforme pédagogique Docker Compose pour Windows (Docker Desktop/WSL2), Linux et macOS. Le projet Compose est nommé **bigdata-training**. Le profil **full** démarre les serveurs de formation et le producteur API continu. Les producteurs fichiers, SQL et logs sont des tâches à exécution unique : le test d’intégration les exécute automatiquement ; ils peuvent aussi être lancés séparément avec `run --rm`. Les outils du profil **checks** s’exécutent séparément.
 
-Les données du dépôt sont dans **`donnees/`**. Les chemins internes Spark `/opt/spark/donnees` et `/home/spark/donnees` restent inchangés et accessibles à l'utilisateur `spark`. Airflow les monte en lecture seule. L'initialisation copie les fichiers dans les volumes Spark et dans **`s3://lakehouse/donnees/`**, avec un manifeste SHA-256 `donnees-manifest.json`. Les fichiers météo restent disponibles pour les notebooks ; aucun serveur SQL météo spécifique n'est installé.
+Les données du dépôt sont dans **`donnees/`**. Les chemins internes Spark `/opt/spark/donnees` et `/home/spark/donnees` restent inchangés et accessibles à l'utilisateur `spark`. Airflow les monte en lecture seule. L'initialisation copie les fichiers dans les volumes Spark et dans **`s3://lakehouse/donnees/`**, avec un manifeste SHA-256 `donnees-manifest.json`. Les fichiers de `donnees/db_ebrasil/` sont aussi copiés avec contrôle SHA-256 vers `s3://lakehouse/bronze/ebrasil/` au démarrage ; les modèles silver/Druid sont ensuite initialisés dans l’ordre des dépendances Compose. Les fichiers météo restent disponibles pour les notebooks ; aucun serveur SQL météo spécifique n'est installé.
 
 ## 1. Préparation
 
@@ -60,7 +60,7 @@ Airflow orchestre les jobs Spark. Druid ingère les ventes depuis Kafka et S3 ; 
 | Producteurs | `file-producer`, `postgres-producer`, `web-log-producer`, `api-producer`, `mock-opendata` | Fichiers, SQL, logs et API locale vers Kafka |
 | Stockage S3 | `objectstore`, `objectstore-permissions`, `objectstore-init` | RustFS, droits, buckets et copie des données |
 | Iceberg | `iceberg-rest`, `iceberg-catalog-permissions` | Catalogue REST et stockage des tables |
-| Spark | `workspace-init`, `spark-master`, `spark-worker-1`, `spark-worker-2`, `spark-history` | Droits, calcul distribué, historique S3 |
+| Spark | `workspace-init`, `spark-master`, `spark-worker-1`, `spark-worker-2`, `spark-history`, `ebrasil-silver-init` | Droits, calcul distribué, historique S3 |
 | Notebooks | `notebooks-init`, `spark-jupyter` | Copie des notebooks et JupyterLab |
 | SQL fédéré | `trino` | PostgreSQL et Iceberg / S3 |
 | Orchestration | `airflow-db`, `airflow` | Métadonnées et orchestration Spark |
