@@ -877,6 +877,7 @@ services:
     profiles:
     - analytics
     - full
+    - checks
     restart: unless-stopped
     environment:
       POSTGRES_DB: druid
@@ -898,6 +899,7 @@ services:
     profiles:
     - analytics
     - full
+    - checks
     restart: unless-stopped
     volumes:
     - zookeeper-data:/data
@@ -909,6 +911,7 @@ services:
     profiles:
     - analytics
     - full
+    - checks
     restart: unless-stopped
     command:
     - coordinator
@@ -967,6 +970,7 @@ services:
     profiles:
     - analytics
     - full
+    - checks
     restart: unless-stopped
     command:
     - broker
@@ -1025,6 +1029,7 @@ services:
     profiles:
     - analytics
     - full
+    - checks
     restart: unless-stopped
     command:
     - historical
@@ -1083,6 +1088,7 @@ services:
     profiles:
     - analytics
     - full
+    - checks
     restart: unless-stopped
     command:
     - middleManager
@@ -1142,6 +1148,7 @@ services:
     profiles:
     - analytics
     - full
+    - checks
     restart: unless-stopped
     command:
     - router
@@ -1475,7 +1482,7 @@ services:
     - checks
     restart: 'no'
     user: spark
-    mem_limit: 1536m
+    mem_limit: 2g
     hostname: ebrasil-silver-init
     environment:
       AWS_ACCESS_KEY_ID: ${S3_ACCESS_KEY:-labadmin}
