@@ -237,6 +237,16 @@ docker compose --env-file .env --env-file ports.env --profile full --profile che
 
 Ce contrôle compare les huit fichiers bronze aux empreintes source, vérifie la présence des tables Parquet silver, puis compare le nombre de lignes de chaque table aux datasources Druid correspondantes. Le rapport horodaté est écrit dans `reports/`.
 
+Pour reconstruire l’image de l’initialisation Druid et relancer uniquement cette ingestion, une fois la plateforme démarrée et les tables Silver disponibles :
+
+```bash
+docker compose --env-file .env --env-file ports.env \
+  --profile full --profile checks build ebrasil-druid-init
+
+docker compose --env-file .env --env-file ports.env \
+  --profile full --profile checks run --rm --no-deps ebrasil-druid-init
+```
+
 ## 6. Arrêter, redémarrer, reconstruire
 
 ```bash
