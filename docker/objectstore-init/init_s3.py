@@ -145,6 +145,42 @@ def sync_data(client, source: Path, verify_only: bool = False) -> dict:
     return manifest
 
 
+
+def sync_ebrasil_bronze(client, source: Path, verify_only: bool = False) -> dict:
+    """Copy the prepared Olist Parquet files to lakehouse/bronze/ebrasil."""
+    ebrasil = source / "db_ebrasil"
+    if not ebrasil.is_dir():
+        raise FileNotFoundError(f"Missing eBrasil source directory: {ebrasil}")
+    files = sorted(path for path in ebrasil.iterdir() if path.is_file() and path.suffix.lower() == ".parquet")
+    if len(files) != 9:
+        raise ValueError(f"Expected 9 eBrasil Parquet files in {ebrasil}, found {len(files)}")
+    manifest = {}
+    for path in files:
+        key = "bronze/ebrasil/" + path.name
+        with path.open("rb") as stream:
+            digest = hashlib.file_digest(stream, "sha256").hexdigest()
+        if not verify_only:
+            client.upload_file(str(path), "lakehouse", key)
+        remote = client.get_object(Bucket="lakehouse", Key=key)["Body"]
+        try:
+            remote_digest = hashlib.file_digest(remote, "sha256").hexdigest()
+        finally:
+            remote.close()
+        if remote_digest != digest:
+            raise RuntimeError(f"RustFS bronze content mismatch: {key}")
+        manifest[path.name] = {"size": path.stat().st_size, "sha256": digest}
+    manifest_key = "bronze/ebrasil/_manifest.json"
+    encoded = json.dumps(manifest, sort_keys=True).encode()
+    if not verify_only:
+        client.put_object(Bucket="lakehouse", Key=manifest_key, Body=encoded,
+                          ContentType="application/json")
+    saved = json.loads(client.get_object(Bucket="lakehouse", Key=manifest_key)["Body"].read())
+    if saved != manifest:
+        raise RuntimeError("RustFS bronze eBrasil manifest differs from source files")
+    print(f"EBRASIL_BRONZE_VERIFIED files={len(manifest)} prefix=lakehouse/bronze/ebrasil")
+    return manifest
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Initialize and verify the training S3 buckets")
     parser.add_argument("--verify-only", action="store_true")
@@ -160,7 +196,9 @@ def main() -> int:
         ensure_buckets(client, buckets)
         verify_only(client, buckets)
         print("OBJECTSTORE_INIT_OK " + ",".join(buckets))
-    sync_data(client, Path(os.environ["DATA_DIR"]), args.verify_only)
+    source = Path(os.environ["DATA_DIR"])
+    sync_data(client, source, args.verify_only)
+    sync_ebrasil_bronze(client, source, args.verify_only)
     return 0
 
 
