@@ -15,7 +15,7 @@ jobs:
         with:
           python-version: '3.12'
       - name: Install contract test dependencies
-        run: python checks/run_logged.py --name install-contract-dependencies -- pip install pytest PyYAML boto3
+        run: python checks/run_logged.py --name install-contract-dependencies -- pip install -r requirements-checks.txt
       - name: Validate static repository contracts
         run: python checks/run_logged.py --name static-contracts -- python tools/static_validate.py
       - name: Run unit tests
