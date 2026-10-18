@@ -1539,6 +1539,14 @@ services:
     depends_on:
       ebrasil-silver-init:
         condition: service_completed_successfully
+      druid-coordinator:
+        condition: service_healthy
+      druid-middlemanager:
+        condition: service_healthy
+      druid-broker:
+        condition: service_healthy
+      druid-historical:
+        condition: service_healthy
       druid-router:
         condition: service_healthy
     networks:
