@@ -1563,6 +1563,8 @@ services:
     - training-net
   ebrasil-check:
     image: bigdata-training/ebrasil-druid:local
+    build:
+      context: ./docker/ebrasil-druid
     profiles:
     - checks
     restart: 'no'
