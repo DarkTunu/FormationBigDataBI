@@ -64,7 +64,7 @@ Airflow orchestre les jobs Spark. Druid ingère les ventes depuis Kafka et S3 ; 
 | Notebooks | `notebooks-init`, `spark-jupyter` | Copie des notebooks et JupyterLab |
 | SQL fédéré | `trino` | PostgreSQL et Iceberg / S3 |
 | Orchestration | `airflow-db`, `airflow` | Métadonnées et orchestration Spark |
-| Druid | `druid-db`, `zookeeper`, `druid-coordinator`, `druid-broker`, `druid-historical`, `druid-middlemanager`, `druid-router` | Ingestion batch/streaming et analyse OLAP |
+| Druid | `druid-db`, `zookeeper`, `druid-coordinator`, `druid-broker`, `druid-historical`, `druid-middlemanager`, `druid-router`, `ebrasil-druid-init` | Ingestion batch/streaming, modèle eBrasil et analyse OLAP |
 | Superset | `superset-db`, `superset-init`, `superset` | Métadonnées, connexions SQL et BI |
 | Contrôles | `static-check`, `integration-check`, `airflow-check` | Configuration et intégrations réelles |
 
@@ -143,6 +143,26 @@ docker compose --env-file .env --env-file ports.env --profile logs run --rm web-
 ```
 
 Une sortie `0` signifie que la tâche a réussi. Ne pas ajouter `--profile seed` ou `--profile logs` à `up --wait` : ces tâches terminent normalement au lieu de rester actives.
+
+## Modèle dimensionnel eBrasil
+
+Au démarrage du profil `full` (ou `analytics`), trois étapes s’exécutent dans l’ordre :
+
+1. `objectstore-init` copie les neuf fichiers Parquet de `donnees/db_ebrasil/` vers `s3://lakehouse/bronze/ebrasil/`. Les octets et les empreintes SHA-256 sont contrôlés ; le manifeste source est enregistré dans le préfixe.
+2. `ebrasil-silver-init` lance Spark et construit les dimensions conformes et les tables de faits Parquet dans `s3://lakehouse/silver/ebrasil/`. Chaque table dispose aussi d’une sortie JSON dédiée à l’ingestion Druid.
+3. `ebrasil-druid-init` ingère les dimensions et les faits en datasources Druid. Les tâches sont séquentielles et l’initialisation attend leur succès.
+
+Le modèle suit les six étoiles du document de modélisation : ventes (`fact_order_item`), commandes (`fact_order`), finance (`fact_payment`), logistique (`fact_logistics`), satisfaction (`fact_review`) et CRM/RFM (`mart_customer_rfm`). Les dimensions conformes comprennent date, heure, client, produit, vendeur, géographie, statut de commande et type de paiement. La dimension Date expose année, semestre, trimestre, mois, semaine ISO et jour ; la dimension Temps expose partie du jour, heure, minute et seconde. `order_id` reste présent dans les faits pour le drill-through.
+
+Les fichiers déjà préparés agrègent les paiements par commande et pivotent les avis par commande. Le traitement conserve ces grains disponibles : Finance est au niveau commande × type de paiement, et Satisfaction conserve le nombre de notes par score au niveau commande. Le script ne recrée pas de séquences de paiement ou d’avis individuels que les fichiers Parquet ne contiennent plus. Le calcul de distance utilise les coordonnées de géolocalisation fournies ; lorsqu’elles sont absentes, la distance reste nulle.
+
+Les sorties de vérification sont consultables dans `reports/`. Pour relancer les contrôles après le démarrage :
+
+```bash
+docker compose --env-file .env --env-file ports.env --profile full --profile checks run --rm ebrasil-check
+```
+
+Ce contrôle compare les fichiers bronze aux empreintes source, vérifie la présence des tables Parquet silver, puis compare le nombre de lignes de chaque table aux datasources Druid correspondantes. Le rapport horodaté est écrit dans `reports/`.
 
 ## 6. Arrêter, redémarrer, reconstruire
 
