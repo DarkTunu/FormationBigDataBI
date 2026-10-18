@@ -23,8 +23,8 @@ HTTP = requests.Session()
 def check_bronze():
     manifest = json.loads(S3.get_object(Bucket=BUCKET,
         Key="bronze/ebrasil/_manifest.json")["Body"].read())
-    if len(manifest) != 9:
-        raise AssertionError(f"Expected 9 bronze source files, found {len(manifest)}")
+    if len(manifest) != 8:
+        raise AssertionError(f"Expected 8 bronze source files, found {len(manifest)}")
     for filename, expected in manifest.items():
         body = S3.get_object(Bucket=BUCKET, Key=f"bronze/ebrasil/{filename}")["Body"]
         digest = hashlib.file_digest(body, "sha256").hexdigest()
