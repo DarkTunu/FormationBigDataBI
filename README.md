@@ -6,17 +6,30 @@ Plateforme pédagogique Docker Compose pour Windows (Docker Desktop/WSL2), Linux
 
 Les données du dépôt sont dans **`donnees/`**. Les chemins internes Spark `/opt/spark/donnees` et `/home/spark/donnees` restent inchangés et accessibles à l'utilisateur `spark`. Airflow les monte en lecture seule. L'initialisation copie les fichiers dans les volumes Spark et dans **`s3://lakehouse/donnees/`**, avec un manifeste SHA-256 `donnees-manifest.json`. Les fichiers de `donnees/db_ebrasil/` sont aussi copiés avec contrôle SHA-256 vers `s3://lakehouse/bronze/ebrasil/` au démarrage ; les modèles silver/Druid sont ensuite initialisés dans l’ordre des dépendances Compose. Les fichiers météo restent disponibles pour les notebooks ; aucun serveur SQL météo spécifique n'est installé.
 
-## 1. Préparation
+## 1. Préparation d'une machine neuve
 
-Installer Git, Docker Engine ou Docker Desktop et Docker Compose v2. Utiliser des conteneurs Linux. Pour l'ensemble de la plateforme, prévoir **32 Go de RAM et 8 CPU** disponibles pour Docker, et au moins **50 Go d'espace libre** pour les images, les volumes et les données. Une machine plus petite peut exécuter le cœur, mais le profil complet mobilise plusieurs JVM.
+Installer Git, Docker Engine avec le plugin Compose v2 (Linux) ou Docker Desktop avec l'intégration WSL2 activée (Windows). Démarrer Docker et choisir le moteur **Linux containers**. La construction et les tests utilisent des images Linux. Prévoir **32 Go de RAM, 8 CPU et 50 Go d'espace libre** pour l'ensemble de la plateforme ; le cœur seul fonctionne avec moins de ressources. Une connexion Internet est nécessaire au premier pull des images.
+
+Pour les commandes de journalisation et les tests locaux, installer Python 3.12 et les dépendances du dépôt indiquées ci-dessous. Python n'est pas nécessaire aux commandes Docker Compose non enveloppées par `checks/run_logged.py`.
 
 ```bash
 git clone https://github.com/rbizoi/FormationBigDataBI.git
 cd FormationBigDataBI
+
+# Vérifier que le client Docker pointe vers le moteur qui hébergera la formation.
+docker context show
 docker version
 docker compose version
 docker info --format '{{.OSType}}'
+
+# Dépendances des contrôles exécutés depuis l'hôte.
+python --version
+python -m pip install -r requirements-checks.txt
 ```
+
+Sous Ubuntu, remplacer `python` par `python3` si la commande `python` n'existe pas. Si la distribution bloque l'installation globale des paquets, créer un environnement virtuel Python dans le dépôt avant l'installation.
+
+Le dépôt contient déjà `.env`, `ports.env` et les huit fichiers Parquet de `donnees/db_ebrasil/` : aucune copie manuelle ni création préalable de volume n'est requise. Les valeurs de `.env` sont des comptes de formation ; le Compose publie les interfaces sur `127.0.0.1`. Pour un serveur partagé, changer les identifiants avant le démarrage et ne pas exposer directement ces ports à Internet.
 
 Toutes les commandes suivantes s'exécutent à la racine du dépôt. **Toujours charger `.env`, puis `ports.env` dans cet ordre** : `.env` contient les paramètres et comptes ; `ports.env` impose les ports hôte cohérents du portail. Modifier un mot de passe dans `.env` ne modifie pas un compte déjà créé dans un volume existant.
 
@@ -104,6 +117,9 @@ Après le démarrage complet :
 
 ```bash
 # Contrats statiques : chemins, dépendances, données et syntaxe
+# Contrôle du modèle eBrasil : bronze RustFS, silver Spark et datasources Druid
+python checks/run_logged.py --name ebrasil-check -- docker compose --env-file .env --env-file ports.env --profile full --profile checks run --rm ebrasil-check
+
 python checks/run_logged.py --name static-check -- docker compose --env-file .env --env-file ports.env --profile checks run --rm static-check
 
 # Flux de tous les composants de formation
@@ -146,7 +162,7 @@ Une sortie `0` signifie que la tâche a réussi. Ne pas ajouter `--profile seed`
 
 ## Modèle dimensionnel eBrasil
 
-Au démarrage du profil `full` (ou `analytics`), trois étapes s’exécutent dans l’ordre :
+Au démarrage du profil `full` (ou `analytics`), trois étapes s’exécutent dans l’ordre. La commande dédiée de vérification eBrasil active aussi les dépendances nécessaires via `--profile checks` :
 
 1. `objectstore-init` copie les huit fichiers Parquet de `donnees/db_ebrasil/` vers `s3://lakehouse/bronze/ebrasil/`. Les octets et les empreintes SHA-256 sont contrôlés ; le manifeste source est enregistré dans le préfixe.
 2. `ebrasil-silver-init` lance Spark et construit les dimensions conformes et les tables de faits Parquet dans `s3://lakehouse/silver/ebrasil/`. Chaque table dispose aussi d’une sortie JSON dédiée à l’ingestion Druid.
