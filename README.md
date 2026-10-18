@@ -8,7 +8,7 @@ Les données du dépôt sont dans **`donnees/`**. Les chemins internes Spark `/o
 
 ## 1. Préparation d'une machine neuve
 
-Installer Git, Docker Engine avec le plugin Compose v2 (Linux) ou Docker Desktop avec l'intégration WSL2 activée (Windows). Démarrer Docker et choisir le moteur **Linux containers**. La construction et les tests utilisent des images Linux. Prévoir **32 Go de RAM, 8 CPU et 50 Go d'espace libre** pour l'ensemble de la plateforme ; le cœur seul fonctionne avec moins de ressources. Une connexion Internet est nécessaire au premier pull des images.
+Installer Git, Docker Engine avec le plugin Compose v2 (Linux) ou Docker Desktop (Windows/macOS ; sous Windows, activer l'intégration WSL2). Démarrer Docker et choisir le moteur **Linux containers**. La construction et les tests utilisent des images Linux. Prévoir **32 Go de RAM, 8 CPU et 50 Go d'espace libre** pour l'ensemble de la plateforme ; le cœur seul fonctionne avec moins de ressources. Une connexion Internet est nécessaire au premier pull des images.
 
 Pour les commandes de journalisation et les tests locaux, installer Python 3.12 et les dépendances du dépôt indiquées ci-dessous. Python n'est pas nécessaire aux commandes Docker Compose non enveloppées par `checks/run_logged.py`.
 
@@ -27,7 +27,15 @@ python --version
 python -m pip install -r requirements-checks.txt
 ```
 
-Sous Ubuntu, remplacer `python` par `python3` si la commande `python` n'existe pas. Si la distribution bloque l'installation globale des paquets, créer un environnement virtuel Python dans le dépôt avant l'installation.
+Sur Ubuntu/Debian, Python 3 est généralement appelé `python3`. Pour éviter le blocage PEP 668 lors d'une installation globale, créer et activer un environnement virtuel avant d'installer les dépendances :
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install -r requirements-checks.txt
+```
+
+Sous Windows, utiliser `py -3.12` à la place de `python` si nécessaire.
 
 Le dépôt contient déjà `.env`, `ports.env` et les huit fichiers Parquet de `donnees/db_ebrasil/` : aucune copie manuelle ni création préalable de volume n'est requise. Les valeurs de `.env` sont des comptes de formation ; le Compose publie les interfaces sur `127.0.0.1`. Pour un serveur partagé, changer les identifiants avant le démarrage et ne pas exposer directement ces ports à Internet.
 
