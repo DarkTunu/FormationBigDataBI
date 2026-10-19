@@ -19,7 +19,7 @@ TABLES = (
     "dim_geography", "dim_customer", "dim_product", "dim_seller",
     "dim_order_status", "dim_payment_type", "dim_review_score",
     "dim_date", "dim_time", "fact_order_item", "fact_order",
-    "fact_payment", "fact_logistics", "fact_review",
+    "fact_payment", "fact_logistics", "fact_review", "mart_customer_rfm",
 )
 FACTS = (
     "fact_order_item", "fact_order", "fact_payment", "fact_logistics",
