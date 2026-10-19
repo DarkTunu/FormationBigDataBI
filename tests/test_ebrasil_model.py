@@ -32,13 +32,20 @@ def test_ebrasil_processing_and_control_scripts_parse():
     for path in scripts:
         ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
     model = scripts[0].read_text(encoding="utf-8")
-    for table in (
-        "dim_date", "dim_time", "dim_customer", "dim_product", "dim_seller",
-        "dim_geography", "dim_order_status", "dim_payment_type",
+    star_tables = (
         "fact_order_item", "fact_order", "fact_payment", "fact_logistics",
         "fact_review", "mart_customer_rfm",
+    )
+    for table in star_tables:
+        assert f'persist("{table}"' in model
+    assert model.count('persist("fact_') == 5
+    assert 'persist("mart_customer_rfm"' in model
+    assert "join_dimension(" in model
+    for dimension in (
+        "dim_geography", "dim_customer", "dim_product", "dim_seller",
+        "dim_date", "dim_time",
     ):
-        assert f'"{table}"' in model
+        assert f'persist("{dimension}"' not in model
     assert "bronze/ebrasil" in model and "silver/ebrasil" in model
     assert "getFileSystem(hadoop_conf)" in model
     assert '"spark.sql.legacy.parquet.nanosAsLong", "true"' in model
