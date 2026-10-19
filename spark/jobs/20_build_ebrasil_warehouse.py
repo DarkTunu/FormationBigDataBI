@@ -89,6 +89,17 @@ def persist(name, df, manifest):
     }
     print(f"EBRASIL_TABLE_OK name={name} rows={count}", flush=True)
 
+
+def join_dimension(fact, dimension, fact_key, dimension_key, prefix):
+    """Flatten a single-valued dimension into one fact/star datasource."""
+    join_key = f"__{prefix}_join_key"
+    attributes = [name for name in dimension.columns
+                  if name not in (dimension_key, "event_ts")]
+    lookup = dimension.select(
+        F.col(dimension_key).alias(join_key),
+        *[F.col(name).alias(f"{prefix}_{name}") for name in attributes])
+    return fact.join(lookup, fact[fact_key] == lookup[join_key], "left").drop(join_key)
+
 def main():
     global spark
     spark = (SparkSession.builder.appName("ebrasil-star-schema")
@@ -117,7 +128,6 @@ def main():
         geo_select.append(col_or_null(geo, field, dtype="double"))
     dim_geo = geo.select(*geo_select).dropDuplicates(["zip_code"]).withColumn(
         "event_ts", F.lit("1970-01-01T00:00:00Z"))
-    persist("dim_geography", dim_geo, manifest)
 
     customer_base = customers.select(
         col_or_null(customers, "customer_unique_id"),
@@ -135,7 +145,6 @@ def main():
                 F.col("g.lng").alias("longitude"))
         .dropDuplicates(["customer_unique_id"])
         .withColumn("event_ts", F.lit("1970-01-01T00:00:00Z")))
-    persist("dim_customer", dim_customer, manifest)
 
     dim_product = products.select(
         col_or_null(products, "product_id"),
@@ -144,14 +153,12 @@ def main():
           ("name_length", "description_length", "photos_qty", "weight_g",
            "length_cm", "height_cm", "width_cm")]
     ).dropDuplicates(["product_id"]).withColumn("event_ts", F.lit("1970-01-01T00:00:00Z"))
-    persist("dim_product", dim_product, manifest)
 
     dim_seller = sellers.select(
         col_or_null(sellers, "seller_id"), col_or_null(sellers, "zip_code", dtype="string"),
         col_or_null(sellers, "city"), col_or_null(sellers, "state"),
         col_or_null(sellers, "name_state")
     ).dropDuplicates(["seller_id"]).withColumn("event_ts", F.lit("1970-01-01T00:00:00Z"))
-    persist("dim_seller", dim_seller, manifest)
 
     # Order source already exposes named milestones from the existing notebook.
     order_columns = ["order_id", "customer_id", "status", "purchase_timestamp",
@@ -184,7 +191,6 @@ def main():
                 F.dayofweek("calendar_date").alias("weekday"),
                 F.when(F.dayofweek("calendar_date").isin(1, 7), True).otherwise(False).alias("is_weekend"))
         .withColumn("event_ts", F.concat(F.col("calendar_date"), F.lit("T00:00:00Z"))))
-    persist("dim_date", dim_date, manifest)
 
     times = reduce(lambda a, b: a.unionByName(b),
         [o.select(timestamp(o, n).alias("t")) for n in
@@ -202,11 +208,9 @@ def main():
              F.lpad(F.col("hour").cast("string"), 2, "0"), F.lit(":"),
              F.lpad(F.col("minute").cast("string"), 2, "0"), F.lit(":"),
              F.lpad(F.col("second").cast("string"), 2, "0"), F.lit("Z"))))
-    persist("dim_time", dim_time, manifest)
 
     dim_status = (o.select(F.coalesce(F.col("status"), F.lit("unknown")).alias("status"))
                   .distinct().withColumn("event_ts", F.lit("1970-01-01T00:00:00Z")))
-    persist("dim_order_status", dim_status, manifest)
 
     # Build facts from the prepared source tables, preserving their grains.
     cust = customers.select("customer_id", "customer_unique_id",
@@ -231,7 +235,16 @@ def main():
         F.col("price"), F.col("freight_value"), (F.col("price") + F.col("freight_value")).alias("line_total"),
         F.col("price").alias("gmv"), F.lit(1).cast("long").alias("item_count"),
         F.concat(F.date_format(purchase, "yyyy-MM-dd'T'HH:mm:ss"), F.lit("Z")).alias("event_ts"))
-    persist("fact_order_item", sales, manifest)
+    sales_star = sales
+    for dimension, fact_key, dim_key, prefix in [
+        (dim_customer, "customer_unique_id", "customer_unique_id", "customer"),
+        (dim_product, "product_id", "product_id", "product"),
+        (dim_seller, "seller_id", "seller_id", "seller"),
+        (dim_date, "purchase_date_key", "date_key", "purchase_date"),
+        (dim_time, "purchase_time_key", "time_key", "purchase_time"),
+    ]:
+        sales_star = join_dimension(sales_star, dimension, fact_key, dim_key, prefix)
+    persist("fact_order_item", sales_star, manifest)
 
     item_order = i.groupBy("order_id").agg(
         F.count("*").cast("long").alias("item_count"),
@@ -261,7 +274,15 @@ def main():
                 "item_count", "product_count", "seller_count", "product_amount", "freight_amount",
                 "payment_amount", "payment_gap",
                 F.concat(F.date_format(purchase, "yyyy-MM-dd'T'HH:mm:ss"), F.lit("Z")).alias("event_ts")))
-    persist("fact_order", order_fact, manifest)
+    order_star = join_dimension(order_fact, dim_customer, "customer_unique_id",
+                                "customer_unique_id", "customer")
+    for role in ("purchase", "approved", "shipped", "delivered", "estimated_delivery"):
+        order_star = join_dimension(order_star, dim_date, f"{role}_date_key",
+                                    "date_key", f"{role}_date")
+    for role in ("purchase", "approved", "shipped", "delivered"):
+        order_star = join_dimension(order_star, dim_time, f"{role}_time_key",
+                                    "time_key", f"{role}_time")
+    persist("fact_order", order_star, manifest)
 
     # The prepared payments.parquet is pivoted by order in this repository, so
     # the finest possible grain is order x payment method, not payment sequence.
@@ -291,22 +312,31 @@ def main():
     pay_detail = pay_detail.where(F.coalesce("payment_value", F.lit(0.0)) != 0)
     pay_dim = pay_detail.select("payment_type").distinct().withColumn(
         "event_ts", F.lit("1970-01-01T00:00:00Z"))
-    persist("dim_payment_type", pay_dim, manifest)
+
     finance = (pay_detail.join(o, "order_id", "left").join(cust, "customer_id", "left")
         .select("order_id", "payment_type", "customer_unique_id",
                 key_date(purchase).alias("purchase_date_key"), key_time(purchase).alias("purchase_time_key"),
                 "payment_value", "installments", F.lit(1).cast("long").alias("transaction_count"),
                 F.concat(F.date_format(purchase, "yyyy-MM-dd'T'HH:mm:ss"), F.lit("Z")).alias("event_ts")))
-    persist("fact_payment", finance, manifest)
+    finance_star = join_dimension(finance, dim_customer, "customer_unique_id",
+                                   "customer_unique_id", "customer")
+    finance_star = join_dimension(finance_star, dim_date, "purchase_date_key",
+                                  "date_key", "purchase_date")
+    finance_star = join_dimension(finance_star, dim_time, "purchase_time_key",
+                                  "time_key", "purchase_time")
+    persist("fact_payment", finance_star, manifest)
 
     # Logistics grain is one order. When an order has multiple sellers, keep
     # seller_count and use the first available seller coordinate for distance.
-    cust_geo = customer_base.select("customer_id", F.col("zip_code").cast("string").alias("customer_zip"))
+    cust_geo = customer_base.select("customer_id", "customer_unique_id",
+        F.col("zip_code").cast("string").alias("customer_zip"))
     cust_coords = geo.select(F.col("zip_code").cast("string").alias("czip"),
         F.col("lat").cast("double").alias("clat"), F.col("lng").cast("double").alias("clng"))
     seller_first = i.join(sellers.select("seller_id", F.col("zip_code").cast("string").alias("seller_zip")),
-        "seller_id", "left").groupBy("order_id").agg(F.first("seller_zip", ignorenulls=True).alias("seller_zip"),
-                                                     F.countDistinct("seller_id").alias("seller_count"))
+        "seller_id", "left").groupBy("order_id").agg(
+            F.first("seller_id", ignorenulls=True).alias("representative_seller_id"),
+            F.first("seller_zip", ignorenulls=True).alias("seller_zip"),
+            F.countDistinct("seller_id").alias("seller_count"))
     seller_coords = geo.select(F.col("zip_code").cast("string").alias("szip"),
         F.col("lat").cast("double").alias("slat"), F.col("lng").cast("double").alias("slng"))
     logistics = (o.join(cust_geo, "customer_id", "left").join(cust_coords,
@@ -317,7 +347,8 @@ def main():
         F.pow(F.sin((F.col("slat")-F.col("clat"))*radians/2),2) +
         F.cos(F.col("clat")*radians)*F.cos(F.col("slat")*radians)*
         F.pow(F.sin((F.col("slng")-F.col("clng"))*radians/2),2)))
-    logistics = logistics.select("order_id", "customer_id", "customer_zip", "seller_zip",
+    logistics = logistics.select("order_id", "customer_id", "customer_unique_id",
+        "representative_seller_id", "customer_zip", "seller_zip",
         "status", key_date(purchase).alias("purchase_date_key"),
         key_date(F.col("approved_at")).alias("approved_date_key"),
         key_date(F.col("delivered_carrier")).alias("shipped_date_key"),
@@ -335,7 +366,17 @@ def main():
             .otherwise(0).cast("long").alias("delivered_on_time"),
         F.lit(1).cast("long").alias("orders_count"),
         F.concat(F.date_format(purchase, "yyyy-MM-dd'T'HH:mm:ss"), F.lit("Z")).alias("event_ts"))
-    persist("fact_logistics", logistics, manifest)
+    logistics_star = join_dimension(logistics, dim_customer, "customer_unique_id",
+                                     "customer_unique_id", "customer")
+    logistics_star = join_dimension(logistics_star, dim_seller, "representative_seller_id",
+                                    "seller_id", "representative_seller")
+    for role in ("purchase", "approved", "shipped", "delivered", "estimated_delivery"):
+        logistics_star = join_dimension(logistics_star, dim_date, f"{role}_date_key",
+                                        "date_key", f"{role}_date")
+    for role in ("purchase", "delivered"):
+        logistics_star = join_dimension(logistics_star, dim_time, f"{role}_time_key",
+                                        "time_key", f"{role}_time")
+    persist("fact_logistics", logistics_star, manifest)
 
     # Reviews are order-level in the prepared Parquet. Preserve score counts
     # and compute an average only from the observed distribution.
@@ -382,7 +423,13 @@ def main():
             *[F.col(f"score_{n}") for n in range(1, 6) if f"score_{n}" in review_fact.columns],
             key_date(purchase).alias("purchase_date_key"), key_time(purchase).alias("purchase_time_key"),
             F.concat(F.date_format(purchase, "yyyy-MM-dd'T'HH:mm:ss"), F.lit("Z")).alias("event_ts")))
-    persist("fact_review", review_fact, manifest)
+    review_star = join_dimension(review_fact, dim_customer, "customer_unique_id",
+                                 "customer_unique_id", "customer")
+    review_star = join_dimension(review_star, dim_date, "purchase_date_key",
+                                 "date_key", "purchase_date")
+    review_star = join_dimension(review_star, dim_time, "purchase_time_key",
+                                 "time_key", "purchase_time")
+    persist("fact_review", review_star, manifest)
 
     delivered = o.where(F.lower(F.col("status")) == "delivered")
     rfm = (delivered.join(cust, "customer_id", "left").join(item_order, "order_id", "left")
@@ -395,11 +442,19 @@ def main():
                 .alias("average_order_value"))
         .withColumn("recency_days", F.datediff(F.lit(datetime.now(timezone.utc).date().isoformat()),
                                                F.to_date("last_purchase")).cast("long"))
+        .withColumn("last_purchase_date_key", key_date(F.col("last_purchase")))
+        .withColumn("last_purchase_time_key", key_time(F.col("last_purchase")))
         .withColumn("event_ts", F.concat(F.date_format("last_purchase", "yyyy-MM-dd'T'HH:mm:ss"), F.lit("Z"))))
-    persist("mart_customer_rfm", rfm, manifest)
+    rfm_star = join_dimension(rfm, dim_customer, "customer_unique_id",
+                              "customer_unique_id", "customer")
+    rfm_star = join_dimension(rfm_star, dim_date, "last_purchase_date_key",
+                              "date_key", "last_purchase_date")
+    rfm_star = join_dimension(rfm_star, dim_time, "last_purchase_time_key",
+                              "time_key", "last_purchase_time")
+    persist("mart_customer_rfm", rfm_star, manifest)
 
     manifest_doc = {
-        "model": "eBrasil Olist dimensional constellation",
+        "model": "eBrasil denormalized star tables",
         "built_at_utc": datetime.now(timezone.utc).isoformat(),
         "source_prefix": "bronze/ebrasil",
         "silver_prefix": "silver/ebrasil",
