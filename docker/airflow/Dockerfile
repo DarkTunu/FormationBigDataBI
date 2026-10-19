@@ -1,6 +1,4 @@
 FROM maven:3.9.16-eclipse-temurin-17 AS dependency-resolver
-# Retry slow package-index downloads during clean parallel image builds.
-ENV PIP_DEFAULT_TIMEOUT=120 PIP_RETRIES=10
 WORKDIR /build
 COPY spark/runtime/pom.xml /build/pom.xml
 # Resolve the shared Spark/Iceberg runtime JARs.  The AWS URLConnection HTTP
@@ -25,6 +23,9 @@ RUN set -eux; \
 # PySpark requires the same Python minor version on driver and workers.
 # Runtime parity is validated dynamically by the installer.
 FROM apache/airflow:3.1.7-python3.10
+
+# Retry slow package-index downloads during clean parallel image builds.
+ENV PIP_DEFAULT_TIMEOUT=120 PIP_RETRIES=10
 
 USER root
 RUN apt-get update \
