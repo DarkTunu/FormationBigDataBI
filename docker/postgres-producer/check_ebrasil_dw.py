@@ -23,7 +23,7 @@ TABLES = (
 )
 FACTS = (
     "fact_order_item", "fact_order", "fact_payment", "fact_logistics",
-    "fact_review", "mart_customer_rfm",
+    "fact_review",
 )
 
 
