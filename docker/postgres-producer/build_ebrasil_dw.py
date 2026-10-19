@@ -556,7 +556,7 @@ def create_stars(conn: psycopg.Connection) -> None:
                  orders_count, event_ts)
             SELECT o.order_id, c.customer_unique_id, so.seller_id,
                    coalesce(nullif(c.customer_zip_code_prefix, ''), 'UNKNOWN'),
-                   s.zip_code_prefix,
+                   coalesce(s.zip_code_prefix, 'UNKNOWN'),
                    coalesce(nullif(o.order_status, ''), 'unknown'),
                    {date_key(p)}, {time_key(p)},
                    {date_key(approved)}, {time_key(approved)},
@@ -585,7 +585,7 @@ def create_stars(conn: psycopg.Connection) -> None:
               LEFT JOIN dw.dim_geography cg
                      ON cg.zip_code_prefix = coalesce(nullif(c.customer_zip_code_prefix, ''), 'UNKNOWN')
               LEFT JOIN dw.dim_geography sg
-                     ON sg.zip_code_prefix = s.zip_code_prefix"""
+                     ON sg.zip_code_prefix = coalesce(s.zip_code_prefix, 'UNKNOWN')"""
     )
 
     review_created = ts("r.review_creation_date")
