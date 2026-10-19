@@ -1,6 +1,4 @@
 FROM maven:3.9.16-eclipse-temurin-17 AS dependency-resolver
-# Retry slow package-index downloads during clean parallel image builds.
-ENV PIP_DEFAULT_TIMEOUT=120 PIP_RETRIES=10
 
 WORKDIR /build
 COPY spark/runtime/pom.xml /build/pom.xml
@@ -54,6 +52,9 @@ RUN set -eux; \
       | grep -q 'software.amazon.awssdk.thirdparty.org.slf4j.Logger'
 
 FROM apache/spark:4.0.4-scala2.13-java17-python3-r-ubuntu
+
+# Retry slow package-index downloads during clean parallel image builds.
+ENV PIP_DEFAULT_TIMEOUT=120 PIP_RETRIES=10
 
 USER root
 
