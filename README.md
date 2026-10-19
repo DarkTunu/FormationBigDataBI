@@ -173,12 +173,12 @@ Les interfaces les plus utilisées : [Jupyter](http://localhost:25010), [pgAdmin
 Après le démarrage complet :
 
 ```bash
-# Contrats statiques : chemins, dépendances, données et syntaxe
-python checks/run_logged.py --name static-check -- docker compose --env-file .env --env-file ports.env --profile checks run --rm static-check
-
 # Modèle eBrasil : tables et clés étrangères PostgreSQL, bronze RustFS,
 # tables silver Spark et datasources Druid
 python checks/run_logged.py --name ebrasil-check -- docker compose --env-file .env --env-file ports.env --profile full --profile checks run --rm ebrasil-check
+
+# Contrats statiques : chemins, dépendances, données et syntaxe
+python checks/run_logged.py --name static-check -- docker compose --env-file .env --env-file ports.env --profile checks run --rm static-check
 
 # Flux de tous les composants de formation
 python checks/run_logged.py --name integration-check -- docker compose --env-file .env --env-file ports.env --profile checks run --rm integration-check --full
