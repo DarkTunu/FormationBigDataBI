@@ -46,8 +46,13 @@ def check_silver_and_druid():
     model = json.loads(S3.get_object(Bucket=BUCKET,
         Key="silver/ebrasil/model-manifest.json")["Body"].read())
     tables = model["tables"]
-    if len(tables) != 14:
-        raise AssertionError(f"Expected 14 dimensions/facts, found {len(tables)}")
+    expected_tables = {
+        "fact_order_item", "fact_order", "fact_payment",
+        "fact_logistics", "fact_review", "mart_customer_rfm",
+    }
+    if set(tables) != expected_tables:
+        raise AssertionError(
+            f"Expected the six denormalized star tables, found {sorted(tables)}")
     for table, definition in tables.items():
         prefix = f"silver/ebrasil/{table}/"
         objects = S3.list_objects_v2(Bucket=BUCKET, Prefix=prefix).get("Contents", [])
