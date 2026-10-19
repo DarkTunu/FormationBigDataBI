@@ -2,7 +2,7 @@ name: SQL connectors
 on:
   push:
     branches: [master]
-    paths: ['compose.yaml', 'trino/**', 'docker/objectstore-init/**', 'checks/sql_connectors.py', 'checks/run_logged.py', '.github/workflows/sql-connectors.yml']
+    paths: ['compose.yaml', 'trino/**', 'docker/objectstore-init/**', 'docker/postgres-producer/**', 'donnees/ebrasil/**', 'checks/sql_connectors.py', 'checks/run_logged.py', 'tests/test_repository_contract.py', '.github/workflows/sql-connectors.yml']
   pull_request:
   workflow_dispatch:
 permissions:
@@ -20,6 +20,8 @@ jobs:
         run: python checks/run_logged.py --name sql-compose-up -- docker compose --env-file .env --env-file ports.env up -d --build --wait --wait-timeout 600 trino
       - name: Test PostgreSQL and Iceberg federation
         run: python checks/run_logged.py --name sql-connectors -- python checks/sql_connectors.py
+      - name: Build and verify eBrasilDW
+        run: python checks/run_logged.py --name ebrasil-dw-check -- docker compose --env-file .env --env-file ports.env --profile checks run --rm ebrasil-dw-check
       - name: Collect SQL service container logs
         if: always()
         run: python checks/run_logged.py --name sql-container-logs -- docker compose --env-file .env --env-file ports.env logs --tail=100 trino iceberg-rest objectstore postgres-source
