@@ -78,6 +78,14 @@ def test_full_wait_has_no_unconsumed_one_shot_producers():
     assert "['file-producer','postgres-producer','web-log-producer']" in source
 
 
+def test_postgres_producer_uses_system_libpq_without_binary_wheel():
+    requirements = (ROOT/'docker/postgres-producer/requirements.txt').read_text().splitlines()
+    assert 'psycopg==3.3.5' in requirements
+    assert not any('[binary]' in line for line in requirements)
+    dockerfile = (ROOT/'docker/postgres-producer/Dockerfile').read_text()
+    assert 'apt-get install -y --no-install-recommends libpq5' in dockerfile
+
+
 def test_fresh_machine_setup_is_documented():
     requirements = (ROOT/'requirements-checks.txt').read_text().splitlines()
     assert requirements == ['pytest==9.1.1', 'PyYAML==6.0.3', 'boto3==1.43.114']
