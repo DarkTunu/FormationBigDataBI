@@ -1484,6 +1484,60 @@ services:
     volumes:
     - .:/project:ro
     - ./reports:/reports
+  ebrasil-dw-init:
+    image: bigdata-training/postgres-producer:local
+    build:
+      context: ./docker/postgres-producer
+    profiles:
+    - analytics
+    - full
+    - checks
+    restart: 'no'
+    hostname: ebrasil-dw-init
+    environment:
+      PGHOST: postgres-source
+      PGPORT: '5432'
+      PGDATABASE: ${POSTGRES_DB:-formation}
+      PGUSER: ${POSTGRES_USER:-formation}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      EBRASIL_DW_DATABASE: ebrasilDW
+      EBRASIL_CSV_DIR: /data/ebrasil
+    entrypoint:
+    - python
+    - /app/build_ebrasil_dw.py
+    volumes:
+    - ./donnees/ebrasil:/data/ebrasil:ro
+    depends_on:
+      postgres-source:
+        condition: service_healthy
+      postgres-bootstrap:
+        condition: service_completed_successfully
+    networks:
+    - training-net
+  ebrasil-dw-check:
+    image: bigdata-training/postgres-producer:local
+    build:
+      context: ./docker/postgres-producer
+    profiles:
+    - analytics
+    - full
+    - checks
+    restart: 'no'
+    hostname: ebrasil-dw-check
+    environment:
+      PGHOST: postgres-source
+      PGPORT: '5432'
+      PGUSER: ${POSTGRES_USER:-formation}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      EBRASIL_DW_DATABASE: ebrasilDW
+    entrypoint:
+    - python
+    - /app/check_ebrasil_dw.py
+    depends_on:
+      ebrasil-dw-init:
+        condition: service_completed_successfully
+    networks:
+    - training-net
   ebrasil-silver-init:
     image: bigdata-training/spark-runtime:local
     build:
@@ -1550,6 +1604,8 @@ services:
       AWS_REGION: ${AWS_REGION:-us-east-1}
       DRUID_URL: http://druid-router:8888
     depends_on:
+      ebrasil-dw-check:
+        condition: service_completed_successfully
       ebrasil-silver-init:
         condition: service_completed_successfully
       druid-coordinator:
