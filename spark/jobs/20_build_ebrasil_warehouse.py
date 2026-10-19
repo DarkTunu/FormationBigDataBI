@@ -1,7 +1,7 @@
-"""Build conformed dimensions and six eBrasil marts from the bronze Parquet set.
+"""Build six denormalized eBrasil star tables from the bronze Parquet set.
 
-Writes analytics tables as Parquet below lakehouse/silver/ebrasil and JSON
-copies for Druid batch ingestion. The source Parquet files are authoritative.
+Joins single-valued dimensions into each fact star. Writes six analytics tables
+as Parquet below lakehouse/silver/ebrasil and JSON copies for Druid ingestion.
 """
 from __future__ import annotations
 
@@ -209,9 +209,6 @@ def main():
              F.lpad(F.col("minute").cast("string"), 2, "0"), F.lit(":"),
              F.lpad(F.col("second").cast("string"), 2, "0"), F.lit("Z"))))
 
-    dim_status = (o.select(F.coalesce(F.col("status"), F.lit("unknown")).alias("status"))
-                  .distinct().withColumn("event_ts", F.lit("1970-01-01T00:00:00Z")))
-
     # Build facts from the prepared source tables, preserving their grains.
     cust = customers.select("customer_id", "customer_unique_id",
         F.col("zip_code").cast("string").alias("customer_zip"),
@@ -310,9 +307,6 @@ def main():
                 F.col("value").cast("double").alias("payment_value"),
                 F.lit(0).cast("long").alias("installments"))
     pay_detail = pay_detail.where(F.coalesce("payment_value", F.lit(0.0)) != 0)
-    pay_dim = pay_detail.select("payment_type").distinct().withColumn(
-        "event_ts", F.lit("1970-01-01T00:00:00Z"))
-
     finance = (pay_detail.join(o, "order_id", "left").join(cust, "customer_id", "left")
         .select("order_id", "payment_type", "customer_unique_id",
                 key_date(purchase).alias("purchase_date_key"), key_time(purchase).alias("purchase_time_key"),
