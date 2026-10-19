@@ -58,14 +58,22 @@ def timestamp(df, name):
     if isinstance(df.schema[name].dataType, LongType):
         # Spark's compatibility mode exposes Parquet nanoseconds as epoch-ns longs.
         # Convert to epoch microseconds before building a Spark timestamp.
-        return F.timestamp_micros(F.expr(f"`{name}` DIV 1000"))
-    return F.to_timestamp(F.col(name))
+        return F.date_trunc("hour", F.timestamp_micros(F.expr(f"`{name}` DIV 1000")))
+    return F.date_trunc("hour", F.to_timestamp(F.col(name)))
 
 def key_date(ts):
     return F.date_format(ts, "yyyyMMdd").cast("int")
 
 def key_time(ts):
-    return (F.hour(ts) * 10000 + F.minute(ts) * 100 + F.second(ts)).cast("int")
+    """Encode a timestamp as HH0000; minute and second are not retained."""
+    return (F.hour(ts) * 10000).cast("int")
+
+def hour_timestamp(ts):
+    """Format event time at hour granularity (minutes and seconds are zero)."""
+    return F.concat(
+        F.date_format(F.date_trunc("hour", ts), "yyyy-MM-dd'T'HH"),
+        F.lit(":00:00Z"),
+    )
 
 def metric_fields(name):
     return DRUID_METRICS.get(name, {})
@@ -198,16 +206,12 @@ def main():
           "delivered_customer", "estimated_delivery")]).where(F.col("t").isNotNull())
     dim_time = (times.select(key_time(F.col("t")).alias("time_key")).distinct()
         .select("time_key", (F.col("time_key") / 10000).cast("int").alias("hour"),
-                F.floor((F.col("time_key") % 10000) / 100).cast("int").alias("minute"),
-                (F.col("time_key") % 100).cast("int").alias("second"),
                 F.when(F.col("time_key") < 60000, "night")
                  .when(F.col("time_key") < 120000, "morning")
                  .when(F.col("time_key") < 180000, "afternoon").otherwise("evening")
                  .alias("day_part"))
         .withColumn("event_ts", F.concat(F.lit("2000-01-01T"),
-             F.lpad(F.col("hour").cast("string"), 2, "0"), F.lit(":"),
-             F.lpad(F.col("minute").cast("string"), 2, "0"), F.lit(":"),
-             F.lpad(F.col("second").cast("string"), 2, "0"), F.lit("Z"))))
+             F.lpad(F.col("hour").cast("string"), 2, "0"), F.lit(":00:00Z"))))
 
     # Build facts from the prepared source tables, preserving their grains.
     cust = customers.select("customer_id", "customer_unique_id",
@@ -231,7 +235,7 @@ def main():
         F.col("product_id"), F.col("category_name"), F.col("seller_id"),
         F.col("price"), F.col("freight_value"), (F.col("price") + F.col("freight_value")).alias("line_total"),
         F.col("price").alias("gmv"), F.lit(1).cast("long").alias("item_count"),
-        F.concat(F.date_format(purchase, "yyyy-MM-dd'T'HH:mm:ss"), F.lit("Z")).alias("event_ts"))
+        hour_timestamp(purchase).alias("event_ts"))
     sales_star = sales
     for dimension, fact_key, dim_key, prefix in [
         (dim_customer, "customer_unique_id", "customer_unique_id", "customer"),
@@ -270,7 +274,7 @@ def main():
                 key_time(F.col("delivered_customer")).alias("delivered_time_key"),
                 "item_count", "product_count", "seller_count", "product_amount", "freight_amount",
                 "payment_amount", "payment_gap",
-                F.concat(F.date_format(purchase, "yyyy-MM-dd'T'HH:mm:ss"), F.lit("Z")).alias("event_ts")))
+                hour_timestamp(purchase).alias("event_ts")))
     order_star = join_dimension(order_fact, dim_customer, "customer_unique_id",
                                 "customer_unique_id", "customer")
     for role in ("purchase", "approved", "shipped", "delivered", "estimated_delivery"):
@@ -311,7 +315,7 @@ def main():
         .select("order_id", "payment_type", "customer_unique_id",
                 key_date(purchase).alias("purchase_date_key"), key_time(purchase).alias("purchase_time_key"),
                 "payment_value", "installments", F.lit(1).cast("long").alias("transaction_count"),
-                F.concat(F.date_format(purchase, "yyyy-MM-dd'T'HH:mm:ss"), F.lit("Z")).alias("event_ts")))
+                hour_timestamp(purchase).alias("event_ts")))
     finance_star = join_dimension(finance, dim_customer, "customer_unique_id",
                                    "customer_unique_id", "customer")
     finance_star = join_dimension(finance_star, dim_date, "purchase_date_key",
@@ -359,7 +363,7 @@ def main():
             F.when(F.col("delivered_customer") <= F.col("estimated_delivery"), 1).otherwise(0))
             .otherwise(0).cast("long").alias("delivered_on_time"),
         F.lit(1).cast("long").alias("orders_count"),
-        F.concat(F.date_format(purchase, "yyyy-MM-dd'T'HH:mm:ss"), F.lit("Z")).alias("event_ts"))
+        hour_timestamp(purchase).alias("event_ts"))
     logistics_star = join_dimension(logistics, dim_customer, "customer_unique_id",
                                      "customer_unique_id", "customer")
     logistics_star = join_dimension(logistics_star, dim_seller, "representative_seller_id",
@@ -416,7 +420,7 @@ def main():
              .alias("average_score"), "text_review_groups", "answer_hours_sum", "creation_hours_sum",
             *[F.col(f"score_{n}") for n in range(1, 6) if f"score_{n}" in review_fact.columns],
             key_date(purchase).alias("purchase_date_key"), key_time(purchase).alias("purchase_time_key"),
-            F.concat(F.date_format(purchase, "yyyy-MM-dd'T'HH:mm:ss"), F.lit("Z")).alias("event_ts")))
+            hour_timestamp(purchase).alias("event_ts")))
     review_star = join_dimension(review_fact, dim_customer, "customer_unique_id",
                                  "customer_unique_id", "customer")
     review_star = join_dimension(review_star, dim_date, "purchase_date_key",
@@ -438,7 +442,7 @@ def main():
                                                F.to_date("last_purchase")).cast("long"))
         .withColumn("last_purchase_date_key", key_date(F.col("last_purchase")))
         .withColumn("last_purchase_time_key", key_time(F.col("last_purchase")))
-        .withColumn("event_ts", F.concat(F.date_format("last_purchase", "yyyy-MM-dd'T'HH:mm:ss"), F.lit("Z"))))
+        .withColumn("event_ts", hour_timestamp(F.col("last_purchase"))))
     rfm_star = join_dimension(rfm, dim_customer, "customer_unique_id",
                               "customer_unique_id", "customer")
     rfm_star = join_dimension(rfm_star, dim_date, "last_purchase_date_key",
