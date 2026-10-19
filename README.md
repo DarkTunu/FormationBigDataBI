@@ -4,7 +4,7 @@
 
 Plateforme pédagogique Docker Compose pour Windows (Docker Desktop/WSL2), Linux et macOS. Le projet Compose est nommé **bigdata-training**. Le profil **full** démarre les serveurs de formation et le producteur API continu. Les producteurs fichiers, SQL et logs sont des tâches à exécution unique : le test d’intégration les exécute automatiquement ; ils peuvent aussi être lancés séparément avec `run --rm`. Les outils du profil **checks** s’exécutent séparément.
 
-Les données du dépôt sont dans **`donnees/`**. Les chemins internes Spark `/opt/spark/donnees` et `/home/spark/donnees` restent inchangés et accessibles à l'utilisateur `spark`. Airflow les monte en lecture seule. L'initialisation copie les fichiers dans les volumes Spark et dans **`s3://lakehouse/donnees/`**, avec un manifeste SHA-256 `donnees-manifest.json`. Les fichiers de `donnees/db_ebrasil/` sont aussi copiés avec contrôle SHA-256 vers `s3://lakehouse/bronze/ebrasil/` au démarrage ; les modèles silver/Druid sont ensuite initialisés dans l’ordre des dépendances Compose. Les fichiers météo restent disponibles pour les notebooks ; aucun serveur SQL météo spécifique n'est installé.
+Les données du dépôt sont dans **`donnees/`**. Les chemins internes Spark `/opt/spark/donnees` et `/home/spark/donnees` restent inchangés et accessibles à l'utilisateur `spark`. Airflow les monte en lecture seule. L'initialisation copie les fichiers dans les volumes Spark et dans **`s3://lakehouse/donnees/`**, avec un manifeste SHA-256 `donnees-manifest.json`. Les fichiers de `donnees/db_ebrasil/` sont copiés avec contrôle SHA-256 vers `s3://lakehouse/bronze/ebrasil/`, puis transformés en tables Silver et datasources Druid. En parallèle, les CSV de `donnees/ebrasil/` alimentent la base PostgreSQL `ebrasilDW` (schéma `dw`) avec ses dimensions et ses faits. L'initialisation Druid attend la fin des traitements PostgreSQL et Silver. Les fichiers météo restent disponibles pour les notebooks ; aucun serveur SQL météo spécifique n'est installé.
 
 ## 1. Préparation d'une machine neuve
 
@@ -55,35 +55,35 @@ py -m pip install -r requirements-checks.txt
 
 Python n'est pas requis pour construire et démarrer la plateforme. Dans la section 2, pour lancer une commande Docker sans Python, retirez simplement le préfixe `python checks/run_logged.py --name NOM_DU_LOG --` et gardez la commande `docker compose` qui suit. Les contrôles de la section 5 écrivent leurs rapports dans `reports/` depuis leurs conteneurs ; le préfixe Python ajoute en plus un journal horodaté de la commande sur l'hôte. Les tests unitaires locaux nécessitent Python.
 
-Le dépôt contient déjà `.env`, `ports.env` et les huit fichiers Parquet de `donnees/db_ebrasil/` : aucune copie manuelle ni création préalable de volume n'est requise. Les valeurs de `.env` sont des comptes de formation ; le Compose publie les interfaces sur `127.0.0.1`. Pour un serveur partagé, changer les identifiants avant le démarrage et ne pas exposer directement ces ports à Internet.
+Le dépôt contient déjà `.env`, `ports.env`, les fichiers CSV source de `donnees/ebrasil/` et les huit fichiers Parquet de `donnees/db_ebrasil/` : aucune copie manuelle ni création préalable de volume n'est requise. Les valeurs de `.env` sont des comptes de formation ; le Compose publie les interfaces sur `127.0.0.1`. Pour un serveur partagé, changer les identifiants avant le démarrage et ne pas exposer directement ces ports à Internet.
 
 Toutes les commandes suivantes s'exécutent à la racine du dépôt. **Toujours charger `.env`, puis `ports.env` dans cet ordre** : `.env` contient les paramètres et comptes ; `ports.env` impose les ports hôte cohérents du portail. Modifier un mot de passe dans `.env` ne modifie pas un compte déjà créé dans un volume existant.
 
 ### Raccourci : démarrage et contrôles complets
 
-Pour lancer l’installation complète puis vérifier les services et les intégrations :
+Cette séquence regroupe les commandes détaillées aux sections 2 et 5. Elle journalise chaque commande Docker sur l'hôte dans `reports/` et exécute aussi les tests unitaires locaux.
 
 ```bash
 # Vérifier la configuration Compose
-docker compose --env-file .env --env-file ports.env --profile full --profile checks config --quiet
+python checks/run_logged.py --name compose-config -- docker compose --env-file .env --env-file ports.env --profile full --profile checks config --quiet
 
 # Télécharger et construire les images
-docker compose --env-file .env --env-file ports.env --profile full --profile seed --profile logs --profile checks pull --ignore-buildable
-docker compose --env-file .env --env-file ports.env --profile full --profile seed --profile logs --profile checks build
+python checks/run_logged.py --name image-pull -- docker compose --env-file .env --env-file ports.env --profile full --profile seed --profile logs --profile checks pull --ignore-buildable
+python checks/run_logged.py --name image-build -- docker compose --env-file .env --env-file ports.env --profile full --profile seed --profile logs --profile checks build
 
 # Vérifier les ports, démarrer la plateforme et contrôler son état
-docker compose --env-file .env --env-file ports.env run --rm ports-check
-docker compose --env-file .env --env-file ports.env --profile full up -d --remove-orphans --wait --wait-timeout 900
-docker compose --env-file .env --env-file ports.env --profile full ps -a
+python checks/run_logged.py --name ports-check -- docker compose --env-file .env --env-file ports.env run --rm ports-check
+python checks/run_logged.py --name stack-start -- docker compose --env-file .env --env-file ports.env --profile full up -d --remove-orphans --wait --wait-timeout 900
+python checks/run_logged.py --name services-status -- docker compose --env-file .env --env-file ports.env --profile full ps -a
 
 # Vérifier eBrasil, les contrats statiques, les intégrations et Airflow
-docker compose --env-file .env --env-file ports.env --profile full --profile checks run --rm ebrasil-check
-docker compose --env-file .env --env-file ports.env --profile checks run --rm static-check
-docker compose --env-file .env --env-file ports.env --profile checks run --rm integration-check --full
-docker compose --env-file .env --env-file ports.env --profile checks run --rm airflow-check
+python checks/run_logged.py --name ebrasil-check -- docker compose --env-file .env --env-file ports.env --profile full --profile checks run --rm ebrasil-check
+python checks/run_logged.py --name static-check -- docker compose --env-file .env --env-file ports.env --profile checks run --rm static-check
+python checks/run_logged.py --name integration-check -- docker compose --env-file .env --env-file ports.env --profile checks run --rm integration-check --full
+python checks/run_logged.py --name airflow-check -- docker compose --env-file .env --env-file ports.env --profile checks run --rm airflow-check
 
-# Lancer aussi les tests unitaires Python (facultatif)
-python -m pytest -q tests
+# Lancer aussi les tests unitaires Python
+python checks/run_logged.py --name unit-tests -- python -m pytest -q tests
 ```
 
 Les commandes de contrôle doivent retourner le code `0`. Les sections 2 et 5 donnent les détails et les rapports produits.
@@ -94,7 +94,7 @@ Les commandes de contrôle doivent retourner le code `0`. Les sections 2 et 5 do
 # Vérifier la configuration résolue
 python checks/run_logged.py --name compose-config -- docker compose --env-file .env --env-file ports.env --profile full --profile checks config --quiet
 
-# Télécharger les images 
+# Télécharger les images
 python checks/run_logged.py --name image-pull -- docker compose --env-file .env --env-file ports.env --profile full --profile seed --profile logs --profile checks pull --ignore-buildable
 
 # Construire les images locales, outils de test compris
@@ -120,12 +120,12 @@ Portail : **http://localhost:25021**. Les comptes et tokens actifs sont affiché
 
 Sources CSV / JSON / XLSX / PostgreSQL / OpenData / logs → producteurs → Kafka → Spark → Parquet / Delta / Iceberg sur RustFS S3 → Trino → Superset.
 
-Airflow orchestre les jobs Spark. Druid ingère les ventes depuis Kafka et S3 ; PostgreSQL stocke ses métadonnées, ZooKeeper coordonne ses services et RustFS conserve les segments. Superset interroge PostgreSQL, Trino et Druid. Voir [la matrice des intégrations](docs/INTEGRATION_MATRIX.md).
+Airflow orchestre les jobs Spark. La base `ebrasilDW` de PostgreSQL contient les dimensions et les tables de faits eBrasil ; PostgreSQL stocke aussi les métadonnées Druid, ZooKeeper coordonne les services Druid et RustFS conserve les segments. Superset interroge PostgreSQL, Trino et Druid. Voir [la matrice des intégrations](docs/INTEGRATION_MATRIX.md).
 
 | Ensemble | Services Compose | Rôle |
 |---|---|---|
 | Portail et ports | `dashboard`, `ports-check` | Interfaces, rapports, détection des collisions |
-| PostgreSQL | `postgres-source`, `postgres-bootstrap`, `pgadmin-config`, `pgadmin` | Sources SQL, données initiales, administration |
+| PostgreSQL | `postgres-source`, `postgres-bootstrap`, `ebrasil-dw-init`, `ebrasil-dw-check`, `pgadmin-config`, `pgadmin` | Sources SQL, base analytique eBrasil `ebrasilDW`, contrôles et administration |
 | Kafka | `kafka`, `kafka-init`, `kafka-ui` | Broker, topics avec leaders vérifiés, consultation |
 | Producteurs | `file-producer`, `postgres-producer`, `web-log-producer`, `api-producer`, `mock-opendata` | Fichiers, SQL, logs et API locale vers Kafka |
 | Stockage S3 | `objectstore`, `objectstore-permissions`, `objectstore-init` | RustFS, droits, buckets et copie des données |
@@ -136,7 +136,7 @@ Airflow orchestre les jobs Spark. Druid ingère les ventes depuis Kafka et S3 ; 
 | Orchestration | `airflow-db`, `airflow` | Métadonnées et orchestration Spark |
 | Druid | `druid-db`, `zookeeper`, `druid-coordinator`, `druid-broker`, `druid-historical`, `druid-middlemanager`, `druid-router`, `ebrasil-druid-init` | Ingestion batch/streaming, modèle eBrasil et analyse OLAP |
 | Superset | `superset-db`, `superset-init`, `superset` | Métadonnées, connexions SQL et BI |
-| Contrôles | `ebrasil-check`, `static-check`, `integration-check`, `airflow-check` | Modèle eBrasil, configuration et intégrations réelles |
+| Contrôles | `ebrasil-dw-check`, `ebrasil-check`, `static-check`, `integration-check`, `airflow-check` | Tables et contraintes PostgreSQL, modèle RustFS/Spark/Druid, configuration et intégrations réelles |
 
 Les profils spécialisés restent disponibles : `orchestration` (Airflow), `analytics` (Druid/Superset), `demo` (API locale), `seed` (producteurs fichiers/SQL), `logs` (producteur logs). Les services sans profil constituent le cœur.
 
@@ -173,10 +173,11 @@ Les interfaces les plus utilisées : [Jupyter](http://localhost:25010), [pgAdmin
 Après le démarrage complet :
 
 ```bash
-# Contrats statiques : chemins, dépendances, données et syntaxe
-# Contrôle du modèle eBrasil : bronze RustFS, silver Spark et datasources Druid
+# Modèle eBrasil : tables et clés étrangères PostgreSQL, bronze RustFS,
+# tables silver Spark et datasources Druid
 python checks/run_logged.py --name ebrasil-check -- docker compose --env-file .env --env-file ports.env --profile full --profile checks run --rm ebrasil-check
 
+# Contrats statiques : chemins, dépendances, données et syntaxe
 python checks/run_logged.py --name static-check -- docker compose --env-file .env --env-file ports.env --profile checks run --rm static-check
 
 # Flux de tous les composants de formation
@@ -189,7 +190,7 @@ python checks/run_logged.py --name airflow-check -- docker compose --env-file .e
 python checks/run_logged.py --name unit-tests -- python -m pytest -q tests
 ```
 
-Ces contrôles doivent retourner **0**. Le contrôle complet exige les interfaces du cœur et du profil full. Si une interface ne répond pas, il écrit un rapport FAIL avant de lancer les pipelines. Il vérifie ensuite :
+Ces contrôles doivent retourner **0**. Le contrôle eBrasil inclut le contrôle du warehouse PostgreSQL : il vérifie les 15 tables du schéma `dw`, leur contenu, au moins 53 clés étrangères de dimension, la granularité horaire et les sorties RustFS, Spark et Druid. Le contrôle complet exige les interfaces du cœur et du profil full. Si une interface ne répond pas, il écrit un rapport FAIL avant de lancer les pipelines. Il vérifie ensuite :
 
 - Les producteurs fichiers, SQL et logs vers Kafka, puis un aller-retour producteur/consommateur.
 - La copie SHA-256 de `donnees` vers S3, les accès de Spark, et la lecture/écriture exacte d'un fichier S3.
@@ -219,23 +220,24 @@ Une sortie `0` signifie que la tâche a réussi. Ne pas ajouter `--profile seed`
 
 ## Modèle dimensionnel eBrasil
 
-Au démarrage du profil `full` (ou `analytics`), trois étapes s’exécutent dans l’ordre. La commande dédiée de vérification eBrasil active aussi les dépendances nécessaires via `--profile checks` :
+Au démarrage des profils `full` ou `analytics`, les traitements PostgreSQL et Silver démarrent après leurs dépendances respectives. L'ingestion Druid attend la réussite des deux. La commande `ebrasil-check` active également ces dépendances via `--profile checks`.
 
-1. `objectstore-init` copie les huit fichiers Parquet de `donnees/db_ebrasil/` vers `s3://lakehouse/bronze/ebrasil/`. Les octets et les empreintes SHA-256 sont contrôlés ; le manifeste source est enregistré dans le préfixe.
-2. `ebrasil-silver-init` lance Spark et joint les attributs de dimension utiles à chaque étoile pour produire six tables dénormalisées Parquet dans `s3://lakehouse/silver/ebrasil/`. Chaque étoile dispose aussi d’une sortie JSON dédiée à l’ingestion Druid.
-3. `ebrasil-druid-init` ingère les six tables d’étoile dénormalisées comme datasources Druid. Les tâches sont séquentielles ; après chaque ingestion, le service attend que le Broker retourne le nombre de lignes attendu avant de déclarer l’initialisation terminée. Cela laisse aux segments le temps de devenir interrogeables et évite une course avec `ebrasil-check`.
+1. `ebrasil-dw-init` lit les CSV de `donnees/ebrasil/`, crée la base PostgreSQL `ebrasilDW`, son schéma `dw`, puis charge 9 dimensions et 6 tables de faits. Les dates calendaires et les heures sont séparées ; les faits conservent leurs clés de dimension et leurs contraintes de clés étrangères.
+2. `objectstore-init` copie les huit fichiers Parquet de `donnees/db_ebrasil/` vers `s3://lakehouse/bronze/ebrasil/`. Les octets et les empreintes SHA-256 sont contrôlés ; le manifeste source est enregistré dans le préfixe.
+3. `ebrasil-silver-init` lance Spark et joint les attributs de dimension utiles à chaque étoile pour produire six tables dénormalisées Parquet dans `s3://lakehouse/silver/ebrasil/`. Chaque étoile dispose aussi d’une sortie JSON dédiée à l’ingestion Druid.
+4. Après la fin de `ebrasil-dw-check` et `ebrasil-silver-init`, `ebrasil-druid-init` ingère les six tables d’étoile dénormalisées comme datasources Druid. Les tâches sont séquentielles ; après chaque ingestion, le service attend que le Broker retourne le nombre de lignes attendu avant de déclarer l’initialisation terminée.
 
-Le modèle suit les six étoiles du document de modélisation : ventes (`fact_order_item`), commandes (`fact_order`), finance (`fact_payment`), logistique (`fact_logistics`), satisfaction (`fact_review`) et CRM/RFM (`mart_customer_rfm`). Les attributs date, heure, client, produit et vendeur sont intégrés à chaque étoile selon son grain. La table de ventes conserve aussi les attributs produit et vendeur ; la table logistique conserve le vendeur représentatif utilisé pour le calcul de distance. Les valeurs de statut de commande et de type de paiement sont conservées comme attributs des étoiles concernées. `order_id` reste présent dans les faits pour le drill-through.
+Le modèle suit les six étoiles du document de modélisation : ventes (`fact_order_item`), commandes (`fact_order`), finance (`fact_payment`), logistique (`fact_logistics`), satisfaction (`fact_review`) et CRM/RFM (`mart_customer_rfm`). Les dimensions PostgreSQL sont géographie, client, produit, vendeur, statut de commande, type de paiement, score d'avis, date et heure. Les attributs date et heure, client, produit et vendeur sont intégrés à chaque étoile Silver selon son grain. La table de ventes conserve aussi les attributs produit et vendeur ; la table logistique conserve le vendeur représentatif utilisé pour le calcul de distance. Les valeurs de statut de commande et de type de paiement sont conservées comme attributs des étoiles concernées. `order_id` reste présent dans les faits pour le drill-through. Les clés étrangères du warehouse et les grains disponibles sont vérifiés par `ebrasil-dw-check`.
 
 Les fichiers déjà préparés agrègent les paiements par commande et pivotent les avis par commande. Le traitement conserve ces grains disponibles : Finance est au niveau commande × type de paiement, et Satisfaction conserve le nombre de notes par score au niveau commande. Le script ne recrée pas de séquences de paiement ou d’avis individuels que les fichiers Parquet ne contiennent plus. Le calcul de distance utilise les coordonnées de géolocalisation fournies ; lorsqu’elles sont absentes, la distance reste nulle.
 
 Les sorties de vérification sont consultables dans `reports/`. Pour relancer les contrôles après le démarrage :
 
 ```bash
-docker compose --env-file .env --env-file ports.env --profile full --profile checks run --rm ebrasil-check
+python checks/run_logged.py --name ebrasil-check -- docker compose --env-file .env --env-file ports.env --profile full --profile checks run --rm ebrasil-check
 ```
 
-Ce contrôle compare les huit fichiers bronze aux empreintes source, vérifie la présence des tables Parquet silver, puis compare le nombre de lignes de chaque table aux datasources Druid correspondantes. Le rapport horodaté est écrit dans `reports/`.
+Ce contrôle vérifie les 15 tables PostgreSQL et leurs contraintes, compare les huit fichiers bronze aux empreintes source, vérifie la présence des tables Parquet Silver, puis compare le nombre de lignes de chaque table aux datasources Druid correspondantes. Le rapport horodaté est écrit dans `reports/`.
 
 Pour reconstruire l’image de l’initialisation Druid et relancer uniquement cette ingestion, une fois la plateforme démarrée et les tables Silver disponibles :
 
