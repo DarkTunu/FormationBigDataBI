@@ -95,3 +95,29 @@ def test_fresh_machine_setup_is_documented():
     assert 'profile full --profile checks run --rm ebrasil-check' in readme
     workflow = (ROOT/'.github/workflows/contracts.yml').read_text()
     assert 'pip install -r requirements-checks.txt' in workflow
+
+
+def test_ebrasil_postgres_warehouse_is_built_and_checked_on_startup():
+    services = yaml.safe_load((ROOT/'compose.yaml').read_text())['services']
+    init = services['ebrasil-dw-init']
+    check = services['ebrasil-dw-check']
+    assert set(init['profiles']) >= {'analytics', 'full', 'checks'}
+    assert set(check['profiles']) >= {'analytics', 'full', 'checks'}
+    assert init['depends_on']['postgres-source']['condition'] == 'service_healthy'
+    assert check['depends_on']['ebrasil-dw-init']['condition'] == 'service_completed_successfully'
+    assert services['ebrasil-druid-init']['depends_on']['ebrasil-dw-check']['condition'] == 'service_completed_successfully'
+    assert './donnees/ebrasil:/data/ebrasil:ro' in init['volumes']
+    for name in ('build_ebrasil_dw.py', 'check_ebrasil_dw.py'):
+        assert (ROOT/'docker/postgres-producer'/name).is_file()
+    builder = (ROOT/'docker/postgres-producer/build_ebrasil_dw.py').read_text()
+    checker = (ROOT/'docker/postgres-producer/check_ebrasil_dw.py').read_text()
+    assert "date_trunc('hour'" in builder
+    assert 'CREATE DATABASE' in builder and 'ebrasilDW' in builder
+    assert 'REFERENCES dw.' in builder
+    assert 'EBRASIL_DW_BUILD_OK' in builder
+    assert 'EBRASIL_DW_CHECK_OK' in checker
+    assert "date_trunc('hour'" in checker
+    assert len([name for name in ('dim_geography', 'dim_customer', 'dim_product',
+        'dim_seller', 'dim_order_status', 'dim_payment_type', 'dim_review_score',
+        'dim_date', 'dim_time', 'fact_order_item', 'fact_order', 'fact_payment',
+        'fact_logistics', 'fact_review', 'mart_customer_rfm') if name in checker]) == 15
