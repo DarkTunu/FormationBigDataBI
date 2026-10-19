@@ -216,7 +216,8 @@ DDL = (
         event_ts timestamp NOT NULL
     )""",
     """CREATE TABLE dw.fact_review (
-        review_id text PRIMARY KEY,
+        review_row_id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+        review_id text NOT NULL,
         order_id text NOT NULL,
         customer_unique_id text NOT NULL REFERENCES dw.dim_customer(customer_unique_id),
         order_status text NOT NULL REFERENCES dw.dim_order_status(order_status),
