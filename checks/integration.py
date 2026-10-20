@@ -198,7 +198,7 @@ def write_report(full):
 def main():
  parser=argparse.ArgumentParser();parser.add_argument('--full',action='store_true');args=parser.parse_args()
  Path('/reports').mkdir(exist_ok=True)
- for name,url in [('PostgreSQL via Trino','http://trino:8080/v1/info'),('Kafka UI','http://kafka-ui:8080'),('pgAdmin','http://pgadmin:80/misc/ping'),('RustFS console','http://objectstore:9001'),('Iceberg REST','http://iceberg-rest:8181/v1/config'),('Spark Master','http://spark-master:8080'),('Spark Worker 1','http://spark-worker-1:8081'),('Spark Worker 2','http://spark-worker-2:8081'),('JupyterLab','http://spark-jupyter:8888/login'),('Dashboard','http://dashboard:8090/health')]:
+ for name,url in [('PostgreSQL via Trino','http://trino:8080/v1/info'),('Kafka UI','http://kafka-ui:8080'),('pgAdmin','http://pgadmin:80/misc/ping'),('RustFS console','http://objectstore:9001/rustfs/console/health'),('Iceberg REST','http://iceberg-rest:8181/v1/config'),('Spark Master','http://spark-master:8080'),('Spark Worker 1','http://spark-worker-1:8081'),('Spark Worker 2','http://spark-worker-2:8081'),('JupyterLab','http://spark-jupyter:8888/login'),('Dashboard','http://dashboard:8090/health')]:
   check(name,lambda url=url:retry(lambda:http(url),180))
  if args.full:
   for name,url in [('Airflow','http://airflow:8080/api/v2/monitor/health'),('Druid console','http://druid-router:8888'),('Superset','http://superset:8088/health'),('OpenData API','http://mock-opendata:8000/api/events')]:
