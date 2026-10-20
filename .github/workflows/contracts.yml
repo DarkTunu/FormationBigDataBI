@@ -16,6 +16,8 @@ jobs:
           python-version: '3.12'
       - name: Install contract test dependencies
         run: python checks/run_logged.py --name install-contract-dependencies -- pip install -r requirements-checks.txt
+      - name: Compile the Druid Avatica JDBC dialect
+        run: python checks/run_logged.py --name avatica-dialect-build -- mvn -B -q -f spark/runtime/avatica-dialect/pom.xml package
       - name: Validate static repository contracts
         run: python checks/run_logged.py --name static-contracts -- python tools/static_validate.py
       - name: Run unit tests
