@@ -100,6 +100,7 @@ RUN set -eux; \
 # writable home/runtime tree, otherwise it exits before opening port 8888.
 RUN set -eux; \
     install -d -m 0755 -o spark -g spark /home/spark; \
+    install -d -m 1777 /tmp/spark-ivy /tmp/spark-ivy/cache /tmp/spark-ivy/jars; \
     install -d -m 0700 -o spark -g spark \
       /home/spark/.config \
       /home/spark/.cache \
