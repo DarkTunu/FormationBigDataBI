@@ -1,4 +1,5 @@
 """Check the access policy on every consumer, including Airflow's driver."""
+import json
 from pathlib import Path
 import pytest
 import yaml
@@ -51,3 +52,28 @@ def test_compose_spark_mount_uses_donnees():
     for name in ['workspace-init', 'spark-master', 'spark-worker-1', 'spark-worker-2', 'spark-history', 'spark-jupyter', 'integration-check', 'airflow', 'airflow-check']:
         assert 'spark-data:/opt/spark/donnees' in services[name]['volumes'] or 'spark-data:/opt/spark/donnees:ro' in services[name]['volumes'], name
     assert './donnees:/seed/donnees:ro' in services['workspace-init']['volumes']
+
+
+def test_spark_package_resolution_uses_a_writable_ivy_cache():
+    root = Path(__file__).parents[1]
+    defaults = (root / 'spark/conf/spark-defaults.conf').read_text(encoding='utf-8')
+    assert 'spark.jars.ivy                           /tmp/spark-ivy' in defaults
+
+    for dockerfile in ['spark/runtime/Dockerfile', 'docker/airflow/Dockerfile']:
+        text = (root / dockerfile).read_text(encoding='utf-8')
+        assert 'install -d -m 1777 /tmp/spark-ivy /tmp/spark-ivy/cache /tmp/spark-ivy/jars' in text
+
+    notebook_path = root / 'spark/notebooks/pySpark/08-Lecture-des-six-etoiles-Druid.ipynb'
+    notebook = json.loads(notebook_path.read_text(encoding='utf-8'))
+    cells = notebook['cells']
+    sources = [''.join(cell.get('source', [])) for cell in cells]
+    code = '\n'.join(source for cell, source in zip(cells, sources) if cell['cell_type'] == 'code')
+    assert '.config("spark.jars.ivy", IVY_USER_DIR)' in code
+    assert 'IVY_USER_DIR = os.environ.get("SPARK_IVY_DIR", "/tmp/spark-ivy")' in code
+    assert all(not cell.get('outputs') and cell.get('execution_count') is None
+               for cell in cells if cell['cell_type'] == 'code')
+    assert 'pySpark/08-Lecture-des-six-etoiles-Druid.ipynb' in '\n'.join(sources)
+    assert 'pySpark/07-Lecture-des-six-etoiles-Druid.ipynb' not in '\n'.join(sources)
+    for index, cell in enumerate(cells):
+        if cell['cell_type'] == 'code':
+            compile(''.join(cell.get('source', [])), f'{notebook_path}:cell-{index}', 'exec')
