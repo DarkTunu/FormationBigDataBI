@@ -51,12 +51,23 @@ RUN set -eux; \
     javap -classpath '/deps/*' software.amazon.awssdk.utils.IoUtils \
       | grep -q 'software.amazon.awssdk.thirdparty.org.slf4j.Logger'
 
+# Spark's JDBC type inference turns the unbounded VARCHAR columns exposed by
+# Druid/Avatica into VarcharType(-1). Build a small dialect that maps them to
+# Spark StringType before any JDBC schema is inferred.
+FROM maven:3.9.16-eclipse-temurin-17 AS avatica-dialect-build
+WORKDIR /build
+COPY spark/runtime/avatica-dialect/pom.xml /build/pom.xml
+COPY spark/runtime/avatica-dialect/src /build/src
+RUN mvn -B -q -f /build/pom.xml package
+
 FROM apache/spark:4.0.4-scala2.13-java17-python3-r-ubuntu
 
 # Retry slow package-index downloads during clean parallel image builds.
 ENV PIP_DEFAULT_TIMEOUT=120 PIP_RETRIES=10
 
 USER root
+
+COPY --from=avatica-dialect-build /build/target/avatica-jdbc-dialect-1.0.0.jar /opt/spark/jars/
 
 # PySpark driver/workers must share the same Python minor version.  The exact
 # minor is discovered at runtime and later compared with the Airflow driver.
