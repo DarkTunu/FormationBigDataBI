@@ -77,3 +77,24 @@ def test_spark_package_resolution_uses_a_writable_ivy_cache():
     for index, cell in enumerate(cells):
         if cell['cell_type'] == 'code':
             compile(''.join(cell.get('source', [])), f'{notebook_path}:cell-{index}', 'exec')
+
+
+def test_druid_avatica_unbounded_varchar_dialect_is_built_and_registered():
+    root = Path(__file__).parents[1]
+    dockerfile = (root / 'spark/runtime/Dockerfile').read_text(encoding='utf-8')
+    assert 'AS avatica-dialect-build' in dockerfile
+    assert '/build/target/avatica-jdbc-dialect-1.0.0.jar /opt/spark/jars/' in dockerfile
+
+    java_source = (root / 'spark/runtime/avatica-dialect/src/main/java/'
+                   'training/bigdata/druid/AvaticaJdbcDialect.java').read_text(encoding='utf-8')
+    assert 'url.startsWith("jdbc:avatica:")' in java_source
+    assert 'sqlType == Types.VARCHAR' in java_source
+    assert 'Option.apply(DataTypes.StringType)' in java_source
+
+    notebook_path = root / 'spark/notebooks/pySpark/08-Lecture-des-six-etoiles-Druid.ipynb'
+    notebook = json.loads(notebook_path.read_text(encoding='utf-8'))
+    code = '\n'.join(''.join(cell.get('source', [])) for cell in notebook['cells']
+                     if cell['cell_type'] == 'code')
+    assert 'def enregistrer_dialecte_avatica(session):' in code
+    assert 'JdbcDialects.registerDialect(dialecte)' in code
+    assert code.index('enregistrer_dialecte_avatica(spark)') < code.index('.option("query", requete_catalogue)')
